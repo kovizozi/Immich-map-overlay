@@ -45,6 +45,7 @@
   import Thumbnail from '../assets/thumbnail/Thumbnail.svelte';
   import ActivityStatus from './ActivityStatus.svelte';
   import ActivityViewer from './ActivityViewer.svelte';
+  import AssetMapOverlay from './AssetMapOverlay.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import EditorPanel from './editor/EditorPanel.svelte';
   import CropArea from './editor/transform-tool/CropArea.svelte';
@@ -616,6 +617,10 @@
     <div class="col-span-1 col-start-4 row-span-full row-start-1 my-auto justify-self-end">
       <NextAssetAction onNextAsset={() => navigateAsset('next')} />
     </div>
+  {/if}
+
+  {#if $slideshowState === SlideshowState.None && !showDetailPanel && !assetViewerManager.isShowEditor}
+    <AssetMapOverlay {asset} />
   {/if}
 
   {#if showDetailPanel || assetViewerManager.isShowEditor}
