@@ -42,6 +42,30 @@
 </p>
 
 
+## About this fork
+
+This repository is a fork of [immich-app/immich](https://github.com/immich-app/immich) that adds one
+extra feature on top of upstream: a small floating **map overlay** in the web Asset Viewer.
+
+- When you open a photo that has GPS coordinates, a draggable mini-map appears over the photo
+  (bottom right by default), with a pin at the exact location.
+- It can be dragged by its header, closed to a small map icon, and reopened again; the visibility
+  and position are remembered per browser (`localStorage`).
+- It automatically hides while the detail panel or editor is open, and it does not appear at all for
+  assets without GPS data.
+- It works in the normal signed-in viewer, in albums, and on public/password-protected **shared
+  album links** — it reuses the asset data and map component the viewer already has, so it makes no
+  extra API calls and needs no additional authorization.
+
+**Changed/added files** (see [`AssetMapOverlay.svelte`](web/src/lib/components/asset-viewer/AssetMapOverlay.svelte)):
+
+- `web/src/lib/components/asset-viewer/AssetMapOverlay.svelte` — new overlay component
+- `web/src/lib/stores/asset-map-overlay.store.ts` — new persisted store (visibility + position)
+- `web/src/lib/components/asset-viewer/AssetViewer.svelte` — minimal integration (one import, one
+  render block)
+
+Everything else in this repository tracks upstream `immich-app/immich` `main` unmodified.
+
 > [!WARNING]
 > ⚠️ Always follow [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan for your precious photos and videos!
 > 
