@@ -51,7 +51,8 @@ import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
-import { downloadUrl } from '$lib/utils';
+import { downloadBlob, downloadUrl } from '$lib/utils';
+import { createLocationWatermarkedBlob } from '$lib/utils/asset-download-watermark';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -326,6 +327,11 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
   };
 };
 
+const tryCreateWatermarkedDownload = async (asset: AssetResponseDto, mediaUrl: string) => {
+  const response = await fetch(mediaUrl);
+  return response.ok ? createLocationWatermarkedBlob(asset, await response.blob()) : undefined;
+};
+
 export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: { edited: boolean }) => {
   const $t = await getFormatter();
 
@@ -369,7 +375,18 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
 
     try {
       toastManager.primary($t('downloading_asset_filename', { values: { filename } }));
-      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey }), filename);
+      const mediaUrl = getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey });
+
+      // Only the primary "Download" action (not "Download Original", which promises the untouched
+      // file) gets the location card baked in, and only for the photo itself, not its live-photo video.
+      const canWatermark = i === 0 && edited && asset.type === AssetTypeEnum.Image && !!asset.exifInfo?.latitude;
+      const watermarked = canWatermark && (await tryCreateWatermarkedDownload(asset, mediaUrl));
+
+      if (watermarked) {
+        downloadBlob(watermarked, filename);
+      } else {
+        downloadUrl(mediaUrl, filename);
+      }
     } catch (error) {
       handleError(error, $t('errors.error_downloading', { values: { filename } }));
     }
