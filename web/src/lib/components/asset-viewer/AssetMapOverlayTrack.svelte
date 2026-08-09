@@ -13,14 +13,31 @@
     id: string;
     lat: number;
     lng: number;
+    /** Real capture instant (from `fileCreatedAt`), used for chronological order and time-proximity matching. */
     takenAt: number;
+    /** Local calendar day the photo was taken on (from `localDateTime`), e.g. "2026-08-09". */
+    dayKey: string;
+    /** Position within `dayKey`'s 24h, from 0 (midnight) to 1, used to shade points taken later in the day darker. */
+    dayFraction: number;
+    /** True if `lat`/`lng` were guessed from a nearby-in-time asset rather than this asset's own EXIF GPS. */
+    estimated: boolean;
   }
 
-  const EARLIEST_COLOR: [number, number, number] = [37, 99, 235]; // blue-600, earliest asset
-  const LATEST_COLOR: [number, number, number] = [249, 115, 22]; // orange-500, latest asset
+  export interface DayLegendEntry {
+    key: string;
+    label: string;
+    color: string;
+  }
 
-  const lerpColor = ([r1, g1, b1]: number[], [r2, g2, b2]: number[], ratio: number) =>
-    `rgb(${Math.round(r1 + (r2 - r1) * ratio)}, ${Math.round(g1 + (g2 - g1) * ratio)}, ${Math.round(b1 + (b2 - b1) * ratio)})`;
+  // Hues cycled across the days present in an album, spaced for visual distinctness.
+  const DAY_HUES = [217, 24, 142, 291, 48, 199, 340, 88];
+
+  const colorForDay = (dayIndex: number, dayFraction: number) => {
+    const hue = DAY_HUES[dayIndex % DAY_HUES.length];
+    // Same hue all day; lighter in the morning, darker in the evening.
+    const lightness = 72 - dayFraction * 34;
+    return `hsl(${hue}, 70%, ${lightness}%)`;
+  };
 
   // How many of the nearest points (besides the active asset) to show before the user has explored the map.
   const NEARBY_COUNT = 5;
@@ -39,22 +56,25 @@
 
 <script lang="ts">
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { mapSettings } from '$lib/stores/preferences.store';
+  import { locale, mapSettings } from '$lib/stores/preferences.store';
   import { navigate } from '$lib/utils/navigation';
   import { Icon, Theme, themeManager } from '@immich/ui';
   import { mdiMapMarker } from '@mdi/js';
-  import { LngLatBounds, type Map, type MapLibreEvent } from 'maplibre-gl';
+  import { DateTime } from 'luxon';
+  import { LngLatBounds, type Map as MaplibreMap, type MapLibreEvent } from 'maplibre-gl';
   import { MapLibre, Marker } from 'svelte-maplibre';
 
   interface Props {
     /** Sorted ascending by `takenAt`. */
     points: TrackPoint[];
     activeAssetId: string;
+    /** Called whenever the set of days represented by the currently visible points changes. */
+    onLegendChange?: (days: DayLegendEntry[]) => void;
   }
 
-  let { points, activeAssetId }: Props = $props();
+  let { points, activeAssetId, onLegendChange }: Props = $props();
 
-  let map: Map | undefined = $state();
+  let map: MaplibreMap | undefined = $state();
 
   // Tracks whether the user has actually explored the map (as opposed to the initial programmatic
   // fitBounds), so a large album doesn't immediately reveal every point and zoom out past the vicinity
@@ -134,12 +154,35 @@
     return box;
   });
 
-  const colorOf = (point: TrackPoint) => {
-    const min = points[0].takenAt;
-    const max = points.at(-1)!.takenAt;
-    const ratio = max === min ? 0 : (point.takenAt - min) / (max - min);
-    return lerpColor(EARLIEST_COLOR, LATEST_COLOR, ratio);
-  };
+  // Stable per-day color assignment computed from the whole album (not just the visible subset), so a
+  // given day always renders the same hue regardless of which points are currently shown.
+  const dayOrder = $derived.by(() => {
+    const days = [...new Set(points.map((point) => point.dayKey))].sort();
+    return new Map(days.map((day, index) => [day, index]));
+  });
+
+  const colorOf = (point: TrackPoint) => colorForDay(dayOrder.get(point.dayKey) ?? 0, point.dayFraction);
+
+  const legendDays = $derived.by(() => {
+    const seen = new Set<string>();
+    const days: DayLegendEntry[] = [];
+    for (const point of visiblePoints) {
+      if (seen.has(point.dayKey)) {
+        continue;
+      }
+      seen.add(point.dayKey);
+      days.push({
+        key: point.dayKey,
+        color: colorForDay(dayOrder.get(point.dayKey) ?? 0, 0.5),
+        label: DateTime.fromISO(point.dayKey, { locale: $locale }).toFormat('MM.dd ccc'),
+      });
+    }
+    return days.sort((a, b) => a.key.localeCompare(b.key));
+  });
+
+  $effect(() => {
+    onLegendChange?.(legendDays);
+  });
 </script>
 
 <MapLibre
@@ -161,7 +204,13 @@
         asButton
         onclick={() => navigate({ targetRoute: 'current', assetId: point.id })}
       >
-        <div class="size-3 rounded-full border border-white/70 shadow-sm" style:background-color={colorOf(point)}></div>
+        <div
+          class="size-3 rounded-full shadow-sm {point.estimated
+            ? 'border-2 border-dashed border-white opacity-70'
+            : 'border border-white/70'}"
+          style:background-color={colorOf(point)}
+          title={point.estimated ? 'Estimated location (no GPS data on this photo)' : undefined}
+        ></div>
       </Marker>
     {/if}
   {/each}

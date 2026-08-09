@@ -12,7 +12,7 @@
   import { mdiClose, mdiDragHorizontalVariant, mdiMapOutline, mdiResizeBottomRight } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import type { TrackPoint } from './AssetMapOverlayTrack.svelte';
+  import type { DayLegendEntry, TrackPoint } from './AssetMapOverlayTrack.svelte';
 
   interface Props {
     asset: AssetResponseDto;
@@ -37,7 +37,17 @@
   let resizeOrigin: { x: number; y: number; width: number; height: number } | undefined;
 
   let albumTrackPoints = $state<TrackPoint[]>([]);
+  let legendDays = $state<DayLegendEntry[]>([]);
   let albumTrackAbortController: AbortController | undefined;
+
+  // Assets without their own GPS tag (e.g. a second phone with location off) get the coordinates of
+  // whichever GPS-tagged asset in the album was taken closest in time, as long as it's within this window.
+  const GPS_ESTIMATE_TOLERANCE_MS = 5 * 60 * 1000;
+
+  const dayKeyOf = (localDateTime: string) => localDateTime.slice(0, 10);
+  // `localDateTime` is a wall-clock time relabeled as UTC, so milliseconds-since-epoch modulo a day
+  // is milliseconds since that day's local midnight - no timezone math needed.
+  const dayFractionOf = (localDateTime: string) => (new Date(localDateTime).getTime() % 86_400_000) / 86_400_000;
 
   const latlng = $derived(
     (() => {
@@ -69,20 +79,87 @@
         { signal: albumTrackAbortController.signal },
       );
 
-      albumTrackPoints = assets.items
-        .filter((item) => item.exifInfo?.latitude && item.exifInfo.longitude)
-        .map((item) => ({
-          id: item.id,
-          lat: item.exifInfo!.latitude!,
-          lng: item.exifInfo!.longitude!,
-          takenAt: new Date(item.fileCreatedAt).getTime(),
-        }))
+      const dated = assets.items.map((item) => ({
+        id: item.id,
+        takenAt: new Date(item.fileCreatedAt).getTime(),
+        dayKey: dayKeyOf(item.localDateTime),
+        dayFraction: dayFractionOf(item.localDateTime),
+        lat: item.exifInfo?.latitude ?? undefined,
+        lng: item.exifInfo?.longitude ?? undefined,
+      }));
+
+      const anchors = dated
+        .filter(
+          (item): item is typeof item & { lat: number; lng: number } =>
+            item.lat !== undefined && item.lng !== undefined,
+        )
+        .sort((a, b) => a.takenAt - b.takenAt);
+
+      // Closest anchor in time to `takenAt`, found via binary search since `anchors` is sorted.
+      const nearestAnchor = (takenAt: number) => {
+        if (anchors.length === 0) {
+          return;
+        }
+
+        let lo = 0;
+        let hi = anchors.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (anchors[mid].takenAt < takenAt) {
+            lo = mid + 1;
+          } else {
+            hi = mid;
+          }
+        }
+
+        const before = anchors[lo - 1];
+        const after = anchors[lo];
+        const nearest = !before
+          ? after
+          : !after
+            ? before
+            : takenAt - before.takenAt <= after.takenAt - takenAt
+              ? before
+              : after;
+
+        return nearest && Math.abs(nearest.takenAt - takenAt) <= GPS_ESTIMATE_TOLERANCE_MS ? nearest : undefined;
+      };
+
+      albumTrackPoints = dated
+        .map((item): TrackPoint | undefined => {
+          if (item.lat !== undefined && item.lng !== undefined) {
+            return {
+              id: item.id,
+              lat: item.lat,
+              lng: item.lng,
+              takenAt: item.takenAt,
+              dayKey: item.dayKey,
+              dayFraction: item.dayFraction,
+              estimated: false,
+            };
+          }
+
+          const anchor = nearestAnchor(item.takenAt);
+          return (
+            anchor && {
+              id: item.id,
+              lat: anchor.lat,
+              lng: anchor.lng,
+              takenAt: item.takenAt,
+              dayKey: item.dayKey,
+              dayFraction: item.dayFraction,
+              estimated: true,
+            }
+          );
+        })
+        .filter((point): point is TrackPoint => point !== undefined)
         .sort((a, b) => a.takenAt - b.takenAt);
     } catch (error) {
       // Falls back to the single-asset view below - log so a real failure (as opposed to an album
       // with no GPS-tagged assets, which never reaches this catch) is still visible for diagnosis.
       console.error('Failed to load album track markers', error);
       albumTrackPoints = [];
+      legendDays = [];
     }
   };
 
@@ -91,6 +168,7 @@
       void loadAlbumTrack(album.id);
     } else {
       albumTrackPoints = [];
+      legendDays = [];
     }
   });
 
@@ -289,6 +367,17 @@
         />
       </div>
 
+      {#if showAlbumTrack && legendDays.length > 1}
+        <div class="flex items-center gap-2 overflow-x-auto px-1.5 pb-1 text-[10px] whitespace-nowrap text-dark/80">
+          {#each legendDays as day (day.key)}
+            <span class="flex shrink-0 items-center gap-1">
+              <span class="size-2 shrink-0 rounded-full" style:background-color={day.color}></span>
+              {day.label}
+            </span>
+          {/each}
+        </div>
+      {/if}
+
       <div class="relative" style:width="{size.width}px" style:height="{size.height}px">
         {#if showAlbumTrack}
           {#await import('./AssetMapOverlayTrack.svelte')}
@@ -298,7 +387,11 @@
               </div>
             {/await}
           {:then { default: AssetMapOverlayTrack }}
-            <AssetMapOverlayTrack points={albumTrackPoints} activeAssetId={asset.id} />
+            <AssetMapOverlayTrack
+              points={albumTrackPoints}
+              activeAssetId={asset.id}
+              onLegendChange={(days) => (legendDays = days)}
+            />
           {/await}
         {:else if latlng}
           {#await import('$lib/components/shared-components/map/Map.svelte')}
