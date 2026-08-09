@@ -8,7 +8,7 @@
   import { type AlbumResponseDto, type AssetResponseDto, searchAssets } from '@immich/sdk';
   import { Icon, IconButton, LoadingSpinner } from '@immich/ui';
   import { mdiClose, mdiDragHorizontalVariant, mdiMapOutline, mdiResizeBottomRight } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { TrackPoint } from './AssetMapOverlayTrack.svelte';
 
@@ -76,7 +76,10 @@
           takenAt: new Date(item.fileCreatedAt).getTime(),
         }))
         .sort((a, b) => a.takenAt - b.takenAt);
-    } catch {
+    } catch (error) {
+      // Falls back to the single-asset view below - log so a real failure (as opposed to an album
+      // with no GPS-tagged assets, which never reaches this catch) is still visible for diagnosis.
+      console.error('Failed to load album track markers', error);
       albumTrackPoints = [];
     }
   };
@@ -114,14 +117,21 @@
     dragPosition ?? { right: $assetMapOverlaySettings.right, bottom: $assetMapOverlaySettings.bottom },
   );
 
+  // window.innerWidth/innerHeight can be inaccurate on mobile browsers whose address bar/toolbar
+  // shows or hides depending on the page content (e.g. a letterboxed vs. full-bleed photo), leaving
+  // the overlay clamped against a viewport size that no longer matches what's actually visible.
+  // visualViewport tracks the real, currently-visible area and is preferred when available.
+  const viewportWidth = () => globalThis.visualViewport?.width ?? innerWidth;
+  const viewportHeight = () => globalThis.visualViewport?.height ?? innerHeight;
+
   const clampPosition = ({ right, bottom }: { right: number; bottom: number }) => ({
-    right: Math.min(Math.max(right, 0), Math.max(innerWidth - overlayWidth, 0)),
-    bottom: Math.min(Math.max(bottom, 0), Math.max(innerHeight - overlayHeight - navBarHeight, 0)),
+    right: Math.min(Math.max(right, 0), Math.max(viewportWidth() - overlayWidth, 0)),
+    bottom: Math.min(Math.max(bottom, 0), Math.max(viewportHeight() - overlayHeight - navBarHeight, 0)),
   });
 
   const clampSize = ({ width, height }: { width: number; height: number }) => ({
-    width: Math.min(Math.max(width, MIN_WIDTH), MAX_WIDTH, innerWidth - 32),
-    height: Math.min(Math.max(height, MIN_HEIGHT), MAX_HEIGHT, innerHeight - navBarHeight - 32),
+    width: Math.min(Math.max(width, MIN_WIDTH), MAX_WIDTH, viewportWidth() - 32),
+    height: Math.min(Math.max(height, MIN_HEIGHT), MAX_HEIGHT, viewportHeight() - navBarHeight - 32),
   });
 
   const onPointerDown = (event: PointerEvent) => {
@@ -210,6 +220,13 @@
       $assetMapOverlaySettings = settings;
     }
   };
+
+  onMount(() => {
+    // Mobile browsers resize the visible viewport (address bar show/hide) without always firing
+    // the window's own resize event, so the overlay can otherwise be clamped against a stale size.
+    globalThis.visualViewport?.addEventListener('resize', onWindowResize);
+    return () => globalThis.visualViewport?.removeEventListener('resize', onWindowResize);
+  });
 
   const setVisible = (visible: boolean) => {
     $assetMapOverlaySettings = { ...$assetMapOverlaySettings, visible };
