@@ -243,12 +243,14 @@ export class SearchService extends BaseService {
   }
 
   private mapResponse(assets: MapAsset[], nextPage: string | null, options: AssetMapOptions): SearchResponseDto {
+    // A shared link with metadata visibility turned off must not leak EXIF/GPS through search results either.
+    const stripMetadata = options.stripMetadata || (options.auth?.sharedLink && !options.auth.sharedLink.showExif);
     return {
       albums: { total: 0, count: 0, items: [], facets: [] },
       assets: {
         total: assets.length,
         count: assets.length,
-        items: assets.map((asset) => mapAsset(asset, options)),
+        items: assets.map((asset) => mapAsset(asset, { ...options, stripMetadata })),
         facets: [],
         nextPage,
       },

@@ -620,7 +620,7 @@
   {/if}
 
   {#if $slideshowState === SlideshowState.None && !showDetailPanel && !assetViewerManager.isShowEditor}
-    <AssetMapOverlay {asset} />
+    <AssetMapOverlay {asset} {album} />
   {/if}
 
   {#if showDetailPanel || assetViewerManager.isShowEditor}

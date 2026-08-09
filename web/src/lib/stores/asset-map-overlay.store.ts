@@ -6,6 +6,10 @@ export interface AssetMapOverlaySettings {
   right: number;
   /** Distance from the bottom edge of the viewport, in pixels. */
   bottom: number;
+  /** Map body width in pixels. Unset until the user resizes it, so the responsive default applies. */
+  width?: number;
+  /** Map body height in pixels. Unset until the user resizes it, so the responsive default applies. */
+  height?: number;
 }
 
 /**
