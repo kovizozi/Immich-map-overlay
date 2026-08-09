@@ -63,7 +63,7 @@
 
     try {
       const { assets } = await searchAssets(
-        { ...authManager.params, metadataSearchDto: { albumIds: [albumId], size: 1000 } },
+        { ...authManager.params, metadataSearchDto: { albumIds: [albumId], size: 1000, withExif: true } },
         { signal: albumTrackAbortController.signal },
       );
 
