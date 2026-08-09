@@ -4,7 +4,9 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { assetMapOverlaySettings } from '$lib/stores/asset-map-overlay.store';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { delay } from '$lib/utils/asset-utils';
+  import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
   import { type AlbumResponseDto, type AssetResponseDto, searchAssets } from '@immich/sdk';
   import { Icon, IconButton, LoadingSpinner } from '@immich/ui';
   import { mdiClose, mdiDragHorizontalVariant, mdiMapOutline, mdiResizeBottomRight } from '@mdi/js';
@@ -98,8 +100,25 @@
     }
   });
 
+  const timeZone = $derived(asset.exifInfo?.timeZone ?? undefined);
+  const dateTime = $derived(
+    timeZone && asset.exifInfo?.dateTimeOriginal
+      ? fromISODateTime(asset.exifInfo.dateTimeOriginal, timeZone)
+      : fromISODateTimeUTC(asset.localDateTime),
+  );
+  const dateTimeLabel = $derived(
+    dateTime.isValid
+      ? dateTime.toLocaleString(
+          { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' },
+          { locale: $locale },
+        )
+      : undefined,
+  );
+
   const locationLabel = $derived(
-    [asset.exifInfo?.city, asset.exifInfo?.country].filter(Boolean).join(', ') || $t('location'),
+    [[asset.exifInfo?.city, asset.exifInfo?.country].filter(Boolean).join(', ') || $t('location'), dateTimeLabel]
+      .filter(Boolean)
+      .join(' · '),
   );
 
   const defaultSize = $derived(

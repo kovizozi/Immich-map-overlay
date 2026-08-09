@@ -21,6 +21,20 @@
 
   const lerpColor = ([r1, g1, b1]: number[], [r2, g2, b2]: number[], ratio: number) =>
     `rgb(${Math.round(r1 + (r2 - r1) * ratio)}, ${Math.round(g1 + (g2 - g1) * ratio)}, ${Math.round(b1 + (b2 - b1) * ratio)})`;
+
+  // How many of the nearest points (besides the active asset) to show before the user has explored the map.
+  const NEARBY_COUNT = 5;
+  const EARTH_RADIUS_KM = 6371;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+
+  const haversineDistanceKm = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+    const dLat = toRadians(b.lat - a.lat);
+    const dLng = toRadians(b.lng - a.lng);
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLng = Math.sin(dLng / 2);
+    const h = sinDLat ** 2 + Math.cos(toRadians(a.lat)) * Math.cos(toRadians(b.lat)) * sinDLng ** 2;
+    return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
+  };
 </script>
 
 <script lang="ts">
@@ -29,7 +43,7 @@
   import { navigate } from '$lib/utils/navigation';
   import { Icon, Theme, themeManager } from '@immich/ui';
   import { mdiMapMarker } from '@mdi/js';
-  import { LngLatBounds, type Map } from 'maplibre-gl';
+  import { LngLatBounds, type Map, type MapLibreEvent } from 'maplibre-gl';
   import { MapLibre, Marker } from 'svelte-maplibre';
 
   interface Props {
@@ -42,18 +56,79 @@
 
   let map: Map | undefined = $state();
 
+  // Tracks whether the user has actually explored the map (as opposed to the initial programmatic
+  // fitBounds), so a large album doesn't immediately reveal every point and zoom out past the vicinity
+  // of the active asset. Reset whenever the active asset changes so navigating between photos always
+  // starts focused on the new one.
+  let hasExploredMap = $state(false);
+  let viewportBounds = $state<LngLatBounds>();
+
+  $effect(() => {
+    activeAssetId;
+    hasExploredMap = false;
+    viewportBounds = undefined;
+  });
+
+  $effect(() => {
+    if (!map) {
+      return;
+    }
+
+    const currentMap = map;
+    const onUserInteraction = (event: MapLibreEvent<unknown>) => {
+      if (event.originalEvent) {
+        hasExploredMap = true;
+      }
+    };
+    const onMoveEnd = () => {
+      viewportBounds = currentMap.getBounds();
+    };
+
+    currentMap.on('dragstart', onUserInteraction);
+    currentMap.on('zoomstart', onUserInteraction);
+    currentMap.on('moveend', onMoveEnd);
+
+    return () => {
+      currentMap.off('dragstart', onUserInteraction);
+      currentMap.off('zoomstart', onUserInteraction);
+      currentMap.off('moveend', onMoveEnd);
+    };
+  });
+
   const mapTheme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.Light);
   const styleUrl = $derived(
     mapTheme === Theme.Dark ? serverConfigManager.value.mapDarkStyleUrl : serverConfigManager.value.mapLightStyleUrl,
   );
 
+  const anchorPoint = $derived(points.find((point) => point.id === activeAssetId) ?? points[0]);
+
+  // The active asset plus its nearest neighbors, shown before the user pans/zooms the map themselves.
+  const nearbyPoints = $derived.by(() => {
+    if (!anchorPoint) {
+      return [];
+    }
+
+    const others = points
+      .filter((point) => point.id !== anchorPoint.id)
+      .sort((a, b) => haversineDistanceKm(anchorPoint, a) - haversineDistanceKm(anchorPoint, b))
+      .slice(0, NEARBY_COUNT);
+
+    return [anchorPoint, ...others];
+  });
+
+  const visiblePoints = $derived(
+    hasExploredMap && viewportBounds
+      ? points.filter((point) => viewportBounds!.contains([point.lng, point.lat]))
+      : nearbyPoints,
+  );
+
   const bounds = $derived.by(() => {
-    if (points.length === 0) {
+    if (nearbyPoints.length === 0) {
       return;
     }
 
     const box = new LngLatBounds();
-    for (const point of points) {
+    for (const point of nearbyPoints) {
       box.extend([point.lng, point.lat]);
     }
     return box;
@@ -75,7 +150,7 @@
   attributionControl={false}
   bind:map
 >
-  {#each points as point (point.id)}
+  {#each visiblePoints as point (point.id)}
     {#if point.id === activeAssetId}
       <Marker lngLat={[point.lng, point.lat]} zIndex={10}>
         <Icon icon={mdiMapMarker} size="34px" class="translate-y-[calc(5px-50%)] text-primary" />
