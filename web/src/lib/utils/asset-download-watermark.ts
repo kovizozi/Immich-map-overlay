@@ -13,20 +13,28 @@ const protocol = new Protocol();
 void addProtocol('pmtiles', protocol.tile);
 void setRTLTextPlugin(mapboxRtlUrl, true);
 
-// The card's map crop is a wide rectangle (not a square), matching the aspect ratio previewed in the
-// edit modal so what the user frames there is exactly what ends up in the final download.
-export const WATERMARK_MAP_ASPECT = 2;
+// Starting point for the map crop's width/height ratio - adjustable per-download in the edit modal,
+// this is only the initial value shown when the modal opens.
+export const DEFAULT_WATERMARK_MAP_ASPECT = 2;
 export const DEFAULT_WATERMARK_ZOOM = 12;
 
 const MARKER_COLOR = '#e11d48';
+// Font size of one caption line, as a fraction of the map crop's height, before `captionScale` is applied.
+const BASE_CAPTION_LINE_FACTOR = 0.16;
 
 export interface WatermarkPlacement {
   mapCenter: { lat: number; lng: number };
   mapZoom: number;
-  /** Top-left corner of the map crop, as a percentage of the photo's width/height. */
+  /** Top-left corner of the whole card (map crop + caption, whichever is on top), as a % of the photo. */
   cardPosition: { xPercent: number; yPercent: number };
   /** Width of the map crop, as a percentage of the photo's width. */
   widthPercent: number;
+  /** Width/height ratio of the map crop. */
+  mapAspect: number;
+  /** Multiplier applied to the caption's base font size. */
+  captionScale: number;
+  /** Whether the location/date caption sits above or below the map crop. */
+  captionPosition: 'above' | 'below';
 }
 
 interface MapSnapshot {
@@ -148,9 +156,9 @@ const featherCard = (mapSnapshot: HTMLCanvasElement, width: number, height: numb
 /**
  * Renders a discreet "where/when this was taken" mark into the image, for the printed-photo case
  * where there's no interactive map to tap: a feathered (borderless) map crop with a pin, plus a
- * single-line location/date caption underneath. Returns undefined (instead of throwing) whenever this
- * can't be done - the browser can't decode the source image (e.g. RAW/HEIC), etc. - so callers can
- * fall back to the plain, unmodified download.
+ * location/date caption (each on its own line) above or below it. Returns undefined (instead of
+ * throwing) whenever this can't be done - the browser can't decode the source image (e.g. RAW/HEIC),
+ * etc. - so callers can fall back to the plain, unmodified download.
  */
 export const createLocationWatermarkedBlob = async (
   asset: AssetResponseDto,
@@ -170,7 +178,7 @@ export const createLocationWatermarkedBlob = async (
     ctx.drawImage(bitmap, 0, 0);
 
     const mapWidth = Math.round((placement.widthPercent / 100) * canvas.width);
-    const mapHeight = Math.round(mapWidth / WATERMARK_MAP_ASPECT);
+    const mapHeight = Math.round(mapWidth / placement.mapAspect);
 
     const markerLatLng = { lat: asset.exifInfo!.latitude!, lng: asset.exifInfo!.longitude! };
     const { canvas: mapSnapshot, markerFraction } = await renderMapSnapshot(
@@ -185,27 +193,37 @@ export const createLocationWatermarkedBlob = async (
     const cardX = (placement.cardPosition.xPercent / 100) * canvas.width;
     const cardY = (placement.cardPosition.yPercent / 100) * canvas.height;
 
-    ctx.drawImage(card, cardX, cardY);
+    // The location and date always sit on their own line, automatically - never joined into one.
+    const lines = [locationLabel(asset), dateTimeLabel(asset)].filter((line): line is string => !!line);
+    const fontSize = Math.round(mapHeight * BASE_CAPTION_LINE_FACTOR * placement.captionScale);
+    const lineHeight = fontSize * 1.25;
+    const gap = Math.round(mapHeight * 0.06);
+    const captionBlockHeight = lines.length > 0 ? gap + lineHeight * lines.length : 0;
+
+    const mapY = placement.captionPosition === 'above' ? cardY + captionBlockHeight : cardY;
+    const captionTopY = placement.captionPosition === 'above' ? cardY : cardY + mapHeight + gap;
+
+    ctx.drawImage(card, cardX, mapY);
 
     const dotRadius = Math.max(3, mapHeight * 0.035);
     ctx.beginPath();
-    ctx.arc(cardX + markerFraction.x * mapWidth, cardY + markerFraction.y * mapHeight, dotRadius, 0, Math.PI * 2);
+    ctx.arc(cardX + markerFraction.x * mapWidth, mapY + markerFraction.y * mapHeight, dotRadius, 0, Math.PI * 2);
     ctx.fillStyle = MARKER_COLOR;
     ctx.fill();
     ctx.lineWidth = dotRadius * 0.35;
     ctx.strokeStyle = 'white';
     ctx.stroke();
 
-    const label = [locationLabel(asset), dateTimeLabel(asset)].filter(Boolean).join('   ·   ');
-    if (label) {
-      const fontSize = Math.round(mapHeight * 0.2);
+    if (lines.length > 0) {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.font = `400 ${fontSize}px sans-serif`;
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
       ctx.shadowBlur = fontSize * 0.3;
-      ctx.fillText(label, cardX, cardY + mapHeight + fontSize * 0.3);
+      for (const [index, line] of lines.entries()) {
+        ctx.fillText(line, cardX, captionTopY + index * lineHeight);
+      }
     }
 
     return await new Promise<Blob | undefined>((resolve) =>

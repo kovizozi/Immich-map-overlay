@@ -4,13 +4,13 @@
   import {
     createLocationWatermarkedBlob,
     dateTimeLabel,
+    DEFAULT_WATERMARK_MAP_ASPECT,
     DEFAULT_WATERMARK_ZOOM,
     locationLabel,
-    WATERMARK_MAP_ASPECT,
   } from '$lib/utils/asset-download-watermark';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
-  import { FormModal, Icon } from '@immich/ui';
+  import { FormModal, Icon, Switch } from '@immich/ui';
   import { mdiMapMarker, mdiResizeBottomRight } from '@mdi/js';
   import type { LngLatLike, Map as MaplibreMap } from 'maplibre-gl';
   import { MapLibre, Marker } from 'svelte-maplibre';
@@ -26,13 +26,20 @@
   const lat = asset.exifInfo!.latitude!;
   const lng = asset.exifInfo!.longitude!;
   const photoAspect = (asset.width ?? 4) / (asset.height ?? 3);
-  const caption = [locationLabel(asset), dateTimeLabel(asset)].filter(Boolean).join('   ·   ');
+  const captionLines = [
+    { text: locationLabel(asset), muted: false },
+    { text: dateTimeLabel(asset), muted: true },
+  ].filter((line): line is { text: string; muted: boolean } => !!line.text);
 
-  // Card footprint as a percentage of the photo's own width/height, so it maps 1:1 onto the pixel
-  // math in asset-download-watermark.ts regardless of how big the preview itself is rendered on screen.
-  const CAPTION_HEIGHT_PERCENT = 6;
   const MIN_CARD_WIDTH_PERCENT = 14;
   const MAX_CARD_WIDTH_PERCENT = 55;
+  const MIN_MAP_ASPECT = 1;
+  const MAX_MAP_ASPECT = 3.2;
+  const MIN_CAPTION_SCALE = 0.6;
+  const MAX_CAPTION_SCALE = 1.8;
+  // Matches BASE_CAPTION_LINE_FACTOR in asset-download-watermark.ts, expressed relative to the card's
+  // own width (not the map height) so it works as a CSS container-query font-size.
+  const CAPTION_LINE_CQW = (16 * 1.25) / DEFAULT_WATERMARK_MAP_ASPECT;
 
   let mapInstance: MaplibreMap | undefined = $state();
   let center = $state<LngLatLike>([lng, lat]);
@@ -44,11 +51,21 @@
 
   let photoEl: HTMLDivElement | undefined = $state();
   let cardWidthPercent = $state(26);
-  const cardHeightPercent = $derived((cardWidthPercent * photoAspect) / WATERMARK_MAP_ASPECT + CAPTION_HEIGHT_PERCENT);
+  let mapAspect = $state(DEFAULT_WATERMARK_MAP_ASPECT);
+  let captionScale = $state(1);
+  let captionAbove = $state(false);
+
+  const mapHeightPercent = $derived((cardWidthPercent * photoAspect) / mapAspect);
+  const captionBlockHeightPercent = $derived(
+    captionLines.length === 0
+      ? 0
+      : mapHeightPercent * 0.06 + mapHeightPercent * 0.16 * 1.25 * captionScale * captionLines.length,
+  );
+  const cardHeightPercent = $derived(mapHeightPercent + captionBlockHeightPercent);
 
   let cardPos = $state({
-    xPercent: 100 - 26 - 4,
-    yPercent: 100 - (26 * photoAspect) / WATERMARK_MAP_ASPECT - CAPTION_HEIGHT_PERCENT - 4,
+    xPercent: 100 - cardWidthPercent - 4,
+    yPercent: 100 - cardHeightPercent - 4,
   });
   let dragOrigin: { x: number; y: number; xPercent: number; yPercent: number } | undefined;
   let resizeOrigin: { x: number; widthPercent: number } | undefined;
@@ -153,6 +170,9 @@
         mapZoom,
         cardPosition: cardPos,
         widthPercent: cardWidthPercent,
+        mapAspect,
+        captionScale,
+        captionPosition: captionAbove ? 'above' : 'below',
       });
       if (!blob) {
         throw new Error('Failed to render watermark');
@@ -168,6 +188,18 @@
   };
 </script>
 
+{#snippet captionBlock()}
+  {#each captionLines as line (line.text)}
+    <p
+      class="watermark-caption"
+      class:opacity-80={line.muted}
+      style:font-size="calc({CAPTION_LINE_CQW} * {captionScale} * 1cqw)"
+    >
+      {line.text}
+    </p>
+  {/each}
+{/snippet}
+
 <FormModal
   title={$t('location_watermark_title')}
   icon={mdiMapMarker}
@@ -180,7 +212,7 @@
   <div class="flex flex-col gap-3">
     <p class="text-sm text-gray-500">{$t('location_watermark_hint')}</p>
 
-    <div class="w-full overflow-hidden rounded-lg border border-gray-300" style:aspect-ratio={WATERMARK_MAP_ASPECT}>
+    <div class="w-full overflow-hidden rounded-lg border border-gray-300" style:aspect-ratio={mapAspect}>
       <MapLibre
         style={styleUrl}
         class="size-full"
@@ -222,15 +254,20 @@
           onpointerup={onCardPointerUp}
           onpointercancel={onCardPointerUp}
         >
+          {#if captionAbove}
+            {@render captionBlock()}
+          {/if}
+
           <div
             class="watermark-crop"
-            style:aspect-ratio={WATERMARK_MAP_ASPECT}
+            style:aspect-ratio={mapAspect}
             style:background-image={previewSnapshot ? `url(${previewSnapshot})` : 'none'}
           >
             <span class="watermark-pin" style:left="{pinOffset.xPercent}%" style:top="{pinOffset.yPercent}%"></span>
           </div>
-          {#if caption}
-            <p class="watermark-caption">{caption}</p>
+
+          {#if !captionAbove}
+            {@render captionBlock()}
           {/if}
         </button>
 
@@ -247,10 +284,31 @@
         </button>
       </div>
     </div>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <label class="flex flex-col gap-1 text-sm">
+        <span class="text-gray-500">{$t('location_watermark_font_size')}</span>
+        <input type="range" min={MIN_CAPTION_SCALE} max={MAX_CAPTION_SCALE} step="0.1" bind:value={captionScale} />
+      </label>
+
+      <label class="flex flex-col gap-1 text-sm">
+        <span class="text-gray-500">{$t('location_watermark_map_ratio')}</span>
+        <input type="range" min={MIN_MAP_ASPECT} max={MAX_MAP_ASPECT} step="0.1" bind:value={mapAspect} />
+      </label>
+
+      <div class="flex items-center justify-between gap-2 text-sm sm:justify-start">
+        <span class="text-gray-500">{$t('location_watermark_caption_above')}</span>
+        <Switch bind:checked={captionAbove} />
+      </div>
+    </div>
   </div>
 </FormModal>
 
 <style>
+  .watermark-card {
+    container-type: inline-size;
+  }
+
   .watermark-crop {
     position: relative;
     width: 100%;
@@ -278,9 +336,8 @@
   }
 
   .watermark-caption {
-    margin: 6px 0 0;
+    margin: 4px 0 0;
     color: #fff;
-    font-size: 13px;
     font-weight: 400;
     white-space: nowrap;
     overflow: hidden;
