@@ -39,7 +39,7 @@
     return `hsl(${hue}, 70%, ${lightness}%)`;
   };
 
-  // How many of the nearest points (besides the active asset) to show before the user has explored the map.
+  // How many of the nearest points (besides the active asset) the initial camera frames itself around.
   const NEARBY_COUNT = 5;
   const EARTH_RADIUS_KM = 6371;
   const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
@@ -61,7 +61,7 @@
   import { Icon, Theme, themeManager } from '@immich/ui';
   import { mdiMapMarker } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { LngLatBounds, type Map as MaplibreMap, type MapLibreEvent } from 'maplibre-gl';
+  import { LngLatBounds, type Map as MaplibreMap } from 'maplibre-gl';
   import { MapLibre, Marker } from 'svelte-maplibre';
 
   interface Props {
@@ -76,16 +76,13 @@
 
   let map: MaplibreMap | undefined = $state();
 
-  // Tracks whether the user has actually explored the map (as opposed to the initial programmatic
-  // fitBounds), so a large album doesn't immediately reveal every point and zoom out past the vicinity
-  // of the active asset. Reset whenever the active asset changes so navigating between photos always
-  // starts focused on the new one.
-  let hasExploredMap = $state(false);
+  // The camera always starts framed on the active asset's nearby cluster (see `bounds` below), but
+  // every point that actually falls inside the current view is shown - not just those 5-6. Reset
+  // whenever the active asset changes so navigating between photos re-frames on the new one first.
   let viewportBounds = $state<LngLatBounds>();
 
   $effect(() => {
     activeAssetId;
-    hasExploredMap = false;
     viewportBounds = undefined;
   });
 
@@ -95,22 +92,13 @@
     }
 
     const currentMap = map;
-    const onUserInteraction = (event: MapLibreEvent<unknown>) => {
-      if (event.originalEvent) {
-        hasExploredMap = true;
-      }
-    };
     const onMoveEnd = () => {
       viewportBounds = currentMap.getBounds();
     };
 
-    currentMap.on('dragstart', onUserInteraction);
-    currentMap.on('zoomstart', onUserInteraction);
     currentMap.on('moveend', onMoveEnd);
 
     return () => {
-      currentMap.off('dragstart', onUserInteraction);
-      currentMap.off('zoomstart', onUserInteraction);
       currentMap.off('moveend', onMoveEnd);
     };
   });
@@ -122,7 +110,8 @@
 
   const anchorPoint = $derived(points.find((point) => point.id === activeAssetId) ?? points[0]);
 
-  // The active asset plus its nearest neighbors, shown before the user pans/zooms the map themselves.
+  // The active asset plus its nearest neighbors - used only to frame the initial camera; once the map
+  // has a real viewport, `visiblePoints` below takes over and shows whatever actually falls inside it.
   const nearbyPoints = $derived.by(() => {
     if (!anchorPoint) {
       return [];
@@ -137,9 +126,7 @@
   });
 
   const visiblePoints = $derived(
-    hasExploredMap && viewportBounds
-      ? points.filter((point) => viewportBounds!.contains([point.lng, point.lat]))
-      : nearbyPoints,
+    viewportBounds ? points.filter((point) => viewportBounds!.contains([point.lng, point.lat])) : nearbyPoints,
   );
 
   const bounds = $derived.by(() => {
