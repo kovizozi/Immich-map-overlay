@@ -13,25 +13,40 @@ const protocol = new Protocol();
 void addProtocol('pmtiles', protocol.tile);
 void setRTLTextPlugin(mapboxRtlUrl, true);
 
-const MAP_SNAPSHOT_SIZE = 480;
-const MAP_ZOOM = 14;
+// The card's map crop is a wide rectangle (not a square), matching the aspect ratio previewed in the
+// edit modal so what the user frames there is exactly what ends up in the final download.
+export const WATERMARK_MAP_ASPECT = 2;
+export const DEFAULT_WATERMARK_ZOOM = 12;
+
 const MARKER_COLOR = '#e11d48';
 
-const renderMapSnapshot = (lat: number, lng: number): Promise<HTMLCanvasElement> =>
+export interface WatermarkPlacement {
+  mapCenter: { lat: number; lng: number };
+  mapZoom: number;
+  /** Top-left corner of the map crop, as a percentage of the photo's width/height. */
+  cardPosition: { xPercent: number; yPercent: number };
+}
+
+const renderMapSnapshot = (
+  center: { lat: number; lng: number },
+  zoom: number,
+  width: number,
+  height: number,
+): Promise<HTMLCanvasElement> =>
   new Promise((resolve, reject) => {
     const container = document.createElement('div');
     container.style.position = 'fixed';
     container.style.left = '-10000px';
     container.style.top = '0';
-    container.style.width = `${MAP_SNAPSHOT_SIZE}px`;
-    container.style.height = `${MAP_SNAPSHOT_SIZE}px`;
+    container.style.width = `${width}px`;
+    container.style.height = `${height}px`;
     document.body.append(container);
 
     const map = new maplibregl.Map({
       container,
       style: serverConfigManager.value.mapLightStyleUrl,
-      center: [lng, lat],
-      zoom: MAP_ZOOM,
+      center: [center.lng, center.lat],
+      zoom,
       interactive: false,
       attributionControl: false,
       // Without this the WebGL buffer can be cleared before we get a chance to read it into a 2D canvas.
@@ -58,24 +73,7 @@ const renderMapSnapshot = (lat: number, lng: number): Promise<HTMLCanvasElement>
     });
   });
 
-const drawRoundedRect = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) => {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + width, y, x + width, y + height, radius);
-  ctx.arcTo(x + width, y + height, x, y + height, radius);
-  ctx.arcTo(x, y + height, x, y, radius);
-  ctx.arcTo(x, y, x + width, y, radius);
-  ctx.closePath();
-};
-
-const dateTimeLabel = (asset: AssetResponseDto) => {
+export const dateTimeLabel = (asset: AssetResponseDto) => {
   const timeZone = asset.exifInfo?.timeZone ?? undefined;
   const dateTime =
     timeZone && asset.exifInfo?.dateTimeOriginal
@@ -89,27 +87,57 @@ const dateTimeLabel = (asset: AssetResponseDto) => {
     : undefined;
 };
 
-const locationLabel = (asset: AssetResponseDto) =>
+export const locationLabel = (asset: AssetResponseDto) =>
   [asset.exifInfo?.city, asset.exifInfo?.country].filter(Boolean).join(', ') || undefined;
 
 /**
- * Renders a discreet "where/when this was taken" card into the bottom-right corner of the image,
- * for the printed-photo case where there's no interactive map to tap. Returns undefined (instead of
- * throwing) whenever this can't be done - no GPS, an image format the browser can't decode, etc. -
- * so callers can fall back to the plain, unmodified download.
+ * Feathers a map snapshot into a borderless rectangle - no crop line, no rounded corners - by masking
+ * with two intersecting linear-gradient fades (one per axis), mirroring `mask-composite: intersect`
+ * since canvas has no direct equivalent.
+ */
+const featherCard = (mapSnapshot: HTMLCanvasElement, width: number, height: number): HTMLCanvasElement => {
+  const card = document.createElement('canvas');
+  card.width = width;
+  card.height = height;
+  const ctx = card.getContext('2d')!;
+  ctx.drawImage(mapSnapshot, 0, 0, width, height);
+
+  ctx.globalCompositeOperation = 'destination-in';
+
+  const featherX = ctx.createLinearGradient(0, 0, width, 0);
+  featherX.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  featherX.addColorStop(0.16, 'rgba(0, 0, 0, 1)');
+  featherX.addColorStop(0.84, 'rgba(0, 0, 0, 1)');
+  featherX.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = featherX;
+  ctx.fillRect(0, 0, width, height);
+
+  const featherY = ctx.createLinearGradient(0, 0, 0, height);
+  featherY.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  featherY.addColorStop(0.22, 'rgba(0, 0, 0, 1)');
+  featherY.addColorStop(0.78, 'rgba(0, 0, 0, 1)');
+  featherY.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = featherY;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.globalCompositeOperation = 'source-over';
+  return card;
+};
+
+/**
+ * Renders a discreet "where/when this was taken" mark into the image, for the printed-photo case
+ * where there's no interactive map to tap: a feathered (borderless) map crop with a pin, plus a
+ * single-line location/date caption underneath. Returns undefined (instead of throwing) whenever this
+ * can't be done - the browser can't decode the source image (e.g. RAW/HEIC), etc. - so callers can
+ * fall back to the plain, unmodified download.
  */
 export const createLocationWatermarkedBlob = async (
   asset: AssetResponseDto,
   imageBlob: Blob,
+  placement: WatermarkPlacement,
 ): Promise<Blob | undefined> => {
-  const lat = asset.exifInfo?.latitude;
-  const lng = asset.exifInfo?.longitude;
-  if (!lat || !lng) {
-    return undefined;
-  }
-
   try {
-    const [bitmap, mapSnapshot] = await Promise.all([createImageBitmap(imageBlob), renderMapSnapshot(lat, lng)]);
+    const bitmap = await createImageBitmap(imageBlob);
 
     const canvas = document.createElement('canvas');
     canvas.width = bitmap.width;
@@ -121,53 +149,36 @@ export const createLocationWatermarkedBlob = async (
     ctx.drawImage(bitmap, 0, 0);
 
     const shortSide = Math.min(bitmap.width, bitmap.height);
-    const mapSize = Math.min(380, Math.max(160, Math.round(shortSide * 0.18)));
-    const margin = Math.round(shortSide * 0.03);
-    const pad = Math.round(mapSize * 0.09);
-    const radius = Math.round(mapSize * 0.1);
+    const mapWidth = Math.min(1100, Math.max(260, Math.round(shortSide * 0.4)));
+    const mapHeight = Math.round(mapWidth / WATERMARK_MAP_ASPECT);
 
-    const lines = [locationLabel(asset), dateTimeLabel(asset)].filter((line): line is string => !!line);
-    const lineHeight = Math.round(mapSize * 0.16);
-    const textBlockHeight = lines.length * lineHeight;
+    const mapSnapshot = await renderMapSnapshot(placement.mapCenter, placement.mapZoom, mapWidth, mapHeight);
+    const card = featherCard(mapSnapshot, mapWidth, mapHeight);
 
-    const cardWidth = mapSize + pad * 2;
-    const cardHeight = mapSize + pad * 2 + textBlockHeight;
-    const cardX = canvas.width - margin - cardWidth;
-    const cardY = canvas.height - margin - cardHeight;
+    const cardX = (placement.cardPosition.xPercent / 100) * canvas.width;
+    const cardY = (placement.cardPosition.yPercent / 100) * canvas.height;
 
-    ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-    ctx.shadowBlur = Math.round(shortSide * 0.006);
-    drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, radius);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    ctx.fill();
-    ctx.restore();
+    ctx.drawImage(card, cardX, cardY);
 
-    ctx.save();
-    drawRoundedRect(ctx, cardX + pad, cardY + pad, mapSize, mapSize, radius * 0.7);
-    ctx.clip();
-    ctx.drawImage(mapSnapshot, cardX + pad, cardY + pad, mapSize, mapSize);
-    ctx.restore();
-
-    const centerX = cardX + pad + mapSize / 2;
-    const centerY = cardY + pad + mapSize / 2;
-    const dotRadius = Math.max(4, mapSize * 0.045);
+    const dotRadius = Math.max(4, mapHeight * 0.07);
     ctx.beginPath();
-    ctx.arc(centerX, centerY, dotRadius, 0, Math.PI * 2);
+    ctx.arc(cardX + mapWidth / 2, cardY + mapHeight / 2, dotRadius, 0, Math.PI * 2);
     ctx.fillStyle = MARKER_COLOR;
     ctx.fill();
-    ctx.lineWidth = dotRadius * 0.4;
+    ctx.lineWidth = dotRadius * 0.35;
     ctx.strokeStyle = 'white';
     ctx.stroke();
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    let textY = cardY + pad + mapSize + Math.round(pad * 0.4);
-    for (const [index, line] of lines.entries()) {
-      ctx.font = `${index === 0 ? 600 : 400} ${Math.round(mapSize * 0.13)}px sans-serif`;
-      ctx.fillStyle = index === 0 ? '#111827' : '#4b5563';
-      ctx.fillText(line, cardX + cardWidth / 2, textY, cardWidth - pad);
-      textY += lineHeight;
+    const label = [locationLabel(asset), dateTimeLabel(asset)].filter(Boolean).join('   ·   ');
+    if (label) {
+      const fontSize = Math.round(mapHeight * 0.2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.font = `600 ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      ctx.shadowBlur = fontSize * 0.35;
+      ctx.fillText(label, cardX, cardY + mapHeight + fontSize * 0.3);
     }
 
     return await new Promise<Blob | undefined>((resolve) =>

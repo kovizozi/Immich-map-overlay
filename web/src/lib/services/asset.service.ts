@@ -46,13 +46,13 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
 import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
+import LocationWatermarkModal from '$lib/modals/LocationWatermarkModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
-import { downloadBlob, downloadUrl } from '$lib/utils';
-import { createLocationWatermarkedBlob } from '$lib/utils/asset-download-watermark';
+import { downloadUrl } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -327,11 +327,6 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
   };
 };
 
-const tryCreateWatermarkedDownload = async (asset: AssetResponseDto, mediaUrl: string) => {
-  const response = await fetch(mediaUrl);
-  return response.ok ? createLocationWatermarkedBlob(asset, await response.blob()) : undefined;
-};
-
 export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: { edited: boolean }) => {
   const $t = await getFormatter();
 
@@ -373,20 +368,19 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
       await sleep(500);
     }
 
+    // Only the primary "Download" action (not "Download Original", which promises the untouched file)
+    // offers the location card, and only for the photo itself, not its live-photo video. The user
+    // frames the card in a modal instead of it being baked in silently, so this replaces the download
+    // entirely rather than falling back to it.
+    const canWatermark = i === 0 && edited && asset.type === AssetTypeEnum.Image && !!asset.exifInfo?.latitude;
+    if (canWatermark) {
+      await modalManager.show(LocationWatermarkModal, { asset });
+      continue;
+    }
+
     try {
       toastManager.primary($t('downloading_asset_filename', { values: { filename } }));
-      const mediaUrl = getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey });
-
-      // Only the primary "Download" action (not "Download Original", which promises the untouched
-      // file) gets the location card baked in, and only for the photo itself, not its live-photo video.
-      const canWatermark = i === 0 && edited && asset.type === AssetTypeEnum.Image && !!asset.exifInfo?.latitude;
-      const watermarked = canWatermark && (await tryCreateWatermarkedDownload(asset, mediaUrl));
-
-      if (watermarked) {
-        downloadBlob(watermarked, filename);
-      } else {
-        downloadUrl(mediaUrl, filename);
-      }
+      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey }), filename);
     } catch (error) {
       handleError(error, $t('errors.error_downloading', { values: { filename } }));
     }
