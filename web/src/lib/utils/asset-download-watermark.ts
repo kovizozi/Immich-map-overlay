@@ -29,12 +29,24 @@ export interface WatermarkPlacement {
   widthPercent: number;
 }
 
+interface MapSnapshot {
+  canvas: HTMLCanvasElement;
+  /** Where `markerLatLng` actually projects to within the snapshot, as a 0-1 fraction of width/height. */
+  markerFraction: { x: number; y: number };
+}
+
+/**
+ * `markerLatLng` is the real GPS point being marked; `center`/`zoom` is whatever area the user framed,
+ * which may no longer be centered on it - so the marker's position is computed via projection instead
+ * of assumed to be the middle of the crop.
+ */
 const renderMapSnapshot = (
   center: { lat: number; lng: number },
   zoom: number,
   width: number,
   height: number,
-): Promise<HTMLCanvasElement> =>
+  markerLatLng: { lat: number; lng: number },
+): Promise<MapSnapshot> =>
   new Promise((resolve, reject) => {
     const container = document.createElement('div');
     container.style.position = 'fixed';
@@ -61,12 +73,19 @@ const renderMapSnapshot = (
     };
 
     map.once('idle', () => {
+      const point = map.project([markerLatLng.lng, markerLatLng.lat]);
       const snapshot = document.createElement('canvas');
       snapshot.width = map.getCanvas().width;
       snapshot.height = map.getCanvas().height;
       snapshot.getContext('2d')?.drawImage(map.getCanvas(), 0, 0);
       cleanup();
-      resolve(snapshot);
+      resolve({
+        canvas: snapshot,
+        markerFraction: {
+          x: Math.min(1, Math.max(0, point.x / width)),
+          y: Math.min(1, Math.max(0, point.y / height)),
+        },
+      });
     });
 
     map.once('error', (event) => {
@@ -108,16 +127,16 @@ const featherCard = (mapSnapshot: HTMLCanvasElement, width: number, height: numb
 
   const featherX = ctx.createLinearGradient(0, 0, width, 0);
   featherX.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  featherX.addColorStop(0.05, 'rgba(0, 0, 0, 1)');
-  featherX.addColorStop(0.95, 'rgba(0, 0, 0, 1)');
+  featherX.addColorStop(0.03, 'rgba(0, 0, 0, 1)');
+  featherX.addColorStop(0.97, 'rgba(0, 0, 0, 1)');
   featherX.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = featherX;
   ctx.fillRect(0, 0, width, height);
 
   const featherY = ctx.createLinearGradient(0, 0, 0, height);
   featherY.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  featherY.addColorStop(0.06, 'rgba(0, 0, 0, 1)');
-  featherY.addColorStop(0.94, 'rgba(0, 0, 0, 1)');
+  featherY.addColorStop(0.04, 'rgba(0, 0, 0, 1)');
+  featherY.addColorStop(0.96, 'rgba(0, 0, 0, 1)');
   featherY.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = featherY;
   ctx.fillRect(0, 0, width, height);
@@ -153,7 +172,14 @@ export const createLocationWatermarkedBlob = async (
     const mapWidth = Math.round((placement.widthPercent / 100) * canvas.width);
     const mapHeight = Math.round(mapWidth / WATERMARK_MAP_ASPECT);
 
-    const mapSnapshot = await renderMapSnapshot(placement.mapCenter, placement.mapZoom, mapWidth, mapHeight);
+    const markerLatLng = { lat: asset.exifInfo!.latitude!, lng: asset.exifInfo!.longitude! };
+    const { canvas: mapSnapshot, markerFraction } = await renderMapSnapshot(
+      placement.mapCenter,
+      placement.mapZoom,
+      mapWidth,
+      mapHeight,
+      markerLatLng,
+    );
     const card = featherCard(mapSnapshot, mapWidth, mapHeight);
 
     const cardX = (placement.cardPosition.xPercent / 100) * canvas.width;
@@ -163,7 +189,7 @@ export const createLocationWatermarkedBlob = async (
 
     const dotRadius = Math.max(3, mapHeight * 0.035);
     ctx.beginPath();
-    ctx.arc(cardX + mapWidth / 2, cardY + mapHeight / 2, dotRadius, 0, Math.PI * 2);
+    ctx.arc(cardX + markerFraction.x * mapWidth, cardY + markerFraction.y * mapHeight, dotRadius, 0, Math.PI * 2);
     ctx.fillStyle = MARKER_COLOR;
     ctx.fill();
     ctx.lineWidth = dotRadius * 0.35;
@@ -175,10 +201,10 @@ export const createLocationWatermarkedBlob = async (
       const fontSize = Math.round(mapHeight * 0.2);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.font = `600 ${fontSize}px sans-serif`;
+      ctx.font = `400 ${fontSize}px sans-serif`;
       ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-      ctx.shadowBlur = fontSize * 0.35;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = fontSize * 0.3;
       ctx.fillText(label, cardX, cardY + mapHeight + fontSize * 0.3);
     }
 

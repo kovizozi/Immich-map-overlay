@@ -38,6 +38,9 @@
   let center = $state<LngLatLike>([lng, lat]);
   let zoom = $state(DEFAULT_WATERMARK_ZOOM);
   let previewSnapshot = $state<string>();
+  // Where the real GPS point currently projects to within the interactive map, as a 0-100% offset -
+  // tracked live so the pin follows it instead of sitting frozen at the crop's center once you pan.
+  let pinOffset = $state({ xPercent: 50, yPercent: 50 });
 
   let photoEl: HTMLDivElement | undefined = $state();
   let cardWidthPercent = $state(26);
@@ -54,7 +57,18 @@
   const styleUrl = serverConfigManager.value.mapLightStyleUrl;
 
   const onMapIdle = () => {
-    previewSnapshot = mapInstance?.getCanvas().toDataURL();
+    if (!mapInstance) {
+      return;
+    }
+
+    previewSnapshot = mapInstance.getCanvas().toDataURL();
+
+    const point = mapInstance.project([lng, lat]);
+    const canvas = mapInstance.getCanvas();
+    pinOffset = {
+      xPercent: Math.min(100, Math.max(0, (point.x / canvas.clientWidth) * 100)),
+      yPercent: Math.min(100, Math.max(0, (point.y / canvas.clientHeight) * 100)),
+    };
   };
 
   const onCardPointerDown = (event: PointerEvent) => {
@@ -213,7 +227,7 @@
             style:aspect-ratio={WATERMARK_MAP_ASPECT}
             style:background-image={previewSnapshot ? `url(${previewSnapshot})` : 'none'}
           >
-            <span class="watermark-pin"></span>
+            <span class="watermark-pin" style:left="{pinOffset.xPercent}%" style:top="{pinOffset.yPercent}%"></span>
           </div>
           {#if caption}
             <p class="watermark-caption">{caption}</p>
@@ -244,19 +258,17 @@
     background-size: cover;
     background-position: center;
     -webkit-mask-image:
-      linear-gradient(to right, transparent, white 5%, white 95%, transparent),
-      linear-gradient(to bottom, transparent, white 6%, white 94%, transparent);
+      linear-gradient(to right, transparent, white 3%, white 97%, transparent),
+      linear-gradient(to bottom, transparent, white 4%, white 96%, transparent);
     -webkit-mask-composite: source-in, source-over;
     mask-image:
-      linear-gradient(to right, transparent, white 5%, white 95%, transparent),
-      linear-gradient(to bottom, transparent, white 6%, white 94%, transparent);
+      linear-gradient(to right, transparent, white 3%, white 97%, transparent),
+      linear-gradient(to bottom, transparent, white 4%, white 96%, transparent);
     mask-composite: intersect;
   }
 
   .watermark-pin {
     position: absolute;
-    top: 50%;
-    left: 50%;
     transform: translate(-50%, -50%);
     width: 7%;
     aspect-ratio: 1;
@@ -269,7 +281,7 @@
     margin: 6px 0 0;
     color: #fff;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 400;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
