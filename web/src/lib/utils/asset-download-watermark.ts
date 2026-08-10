@@ -25,6 +25,8 @@ export interface WatermarkPlacement {
   mapZoom: number;
   /** Top-left corner of the map crop, as a percentage of the photo's width/height. */
   cardPosition: { xPercent: number; yPercent: number };
+  /** Width of the map crop, as a percentage of the photo's width. */
+  widthPercent: number;
 }
 
 const renderMapSnapshot = (
@@ -106,16 +108,16 @@ const featherCard = (mapSnapshot: HTMLCanvasElement, width: number, height: numb
 
   const featherX = ctx.createLinearGradient(0, 0, width, 0);
   featherX.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  featherX.addColorStop(0.16, 'rgba(0, 0, 0, 1)');
-  featherX.addColorStop(0.84, 'rgba(0, 0, 0, 1)');
+  featherX.addColorStop(0.05, 'rgba(0, 0, 0, 1)');
+  featherX.addColorStop(0.95, 'rgba(0, 0, 0, 1)');
   featherX.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = featherX;
   ctx.fillRect(0, 0, width, height);
 
   const featherY = ctx.createLinearGradient(0, 0, 0, height);
   featherY.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  featherY.addColorStop(0.22, 'rgba(0, 0, 0, 1)');
-  featherY.addColorStop(0.78, 'rgba(0, 0, 0, 1)');
+  featherY.addColorStop(0.06, 'rgba(0, 0, 0, 1)');
+  featherY.addColorStop(0.94, 'rgba(0, 0, 0, 1)');
   featherY.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = featherY;
   ctx.fillRect(0, 0, width, height);
@@ -148,8 +150,7 @@ export const createLocationWatermarkedBlob = async (
     }
     ctx.drawImage(bitmap, 0, 0);
 
-    const shortSide = Math.min(bitmap.width, bitmap.height);
-    const mapWidth = Math.min(1100, Math.max(260, Math.round(shortSide * 0.4)));
+    const mapWidth = Math.round((placement.widthPercent / 100) * canvas.width);
     const mapHeight = Math.round(mapWidth / WATERMARK_MAP_ASPECT);
 
     const mapSnapshot = await renderMapSnapshot(placement.mapCenter, placement.mapZoom, mapWidth, mapHeight);
@@ -160,7 +161,7 @@ export const createLocationWatermarkedBlob = async (
 
     ctx.drawImage(card, cardX, cardY);
 
-    const dotRadius = Math.max(4, mapHeight * 0.07);
+    const dotRadius = Math.max(3, mapHeight * 0.035);
     ctx.beginPath();
     ctx.arc(cardX + mapWidth / 2, cardY + mapHeight / 2, dotRadius, 0, Math.PI * 2);
     ctx.fillStyle = MARKER_COLOR;

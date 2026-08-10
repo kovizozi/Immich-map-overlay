@@ -28,6 +28,7 @@ import {
   mdiInformationOutline,
   mdiMagnifyMinusOutline,
   mdiMagnifyPlusOutline,
+  mdiMapMarker,
   mdiMotionPauseOutline,
   mdiMotionPlayOutline,
   mdiPlus,
@@ -119,6 +120,13 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
     shortcuts: { key: 'd', shift: true },
     $if: () => !!authUser,
     onAction: () => handleDownloadAsset(asset, { edited: true }),
+  };
+
+  const DownloadWithMap: ActionItem = {
+    title: $t('location_watermark_title'),
+    icon: mdiMapMarker,
+    $if: () => !!authUser && asset.type === AssetTypeEnum.Image && !!asset.exifInfo?.latitude,
+    onAction: () => modalManager.show(LocationWatermarkModal, { asset }),
   };
 
   const DownloadOriginal: ActionItem = {
@@ -301,6 +309,7 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
   return {
     Share,
     Download,
+    DownloadWithMap,
     DownloadOriginal,
     SharedLinkDownload,
     Offline,
@@ -366,16 +375,6 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
     if (i !== 0) {
       // play nice with Safari
       await sleep(500);
-    }
-
-    // Only the primary "Download" action (not "Download Original", which promises the untouched file)
-    // offers the location card, and only for the photo itself, not its live-photo video. The user
-    // frames the card in a modal instead of it being baked in silently, so this replaces the download
-    // entirely rather than falling back to it.
-    const canWatermark = i === 0 && edited && asset.type === AssetTypeEnum.Image && !!asset.exifInfo?.latitude;
-    if (canWatermark) {
-      await modalManager.show(LocationWatermarkModal, { asset });
-      continue;
     }
 
     try {

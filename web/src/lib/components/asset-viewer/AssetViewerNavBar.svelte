@@ -139,6 +139,7 @@
         <ActionMenuItem action={Actions.PlaySlideshow} />
 
         <ActionMenuItem action={Actions.Download} />
+        <ActionMenuItem action={Actions.DownloadWithMap} />
         <ActionMenuItem action={Actions.DownloadOriginal} />
 
         {#if !isLocked && asset.isTrashed}

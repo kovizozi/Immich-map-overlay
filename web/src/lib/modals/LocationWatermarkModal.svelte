@@ -11,7 +11,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
   import { FormModal, Icon } from '@immich/ui';
-  import { mdiMapMarker } from '@mdi/js';
+  import { mdiMapMarker, mdiResizeBottomRight } from '@mdi/js';
   import type { LngLatLike, Map as MaplibreMap } from 'maplibre-gl';
   import { MapLibre, Marker } from 'svelte-maplibre';
   import { t } from 'svelte-i18n';
@@ -28,13 +28,11 @@
   const photoAspect = (asset.width ?? 4) / (asset.height ?? 3);
   const caption = [locationLabel(asset), dateTimeLabel(asset)].filter(Boolean).join('   ·   ');
 
-  // Card footprint as a percentage of the photo, kept in sync with the pixel math in
-  // asset-download-watermark.ts (~40% of the shorter side there vs. of the width here - close enough
-  // for a drag preview, since the user can see and correct the exact result before confirming).
-  const CARD_WIDTH_PERCENT = 34;
-  const CARD_MAP_HEIGHT_PERCENT = (CARD_WIDTH_PERCENT * photoAspect) / WATERMARK_MAP_ASPECT;
+  // Card footprint as a percentage of the photo's own width/height, so it maps 1:1 onto the pixel
+  // math in asset-download-watermark.ts regardless of how big the preview itself is rendered on screen.
   const CAPTION_HEIGHT_PERCENT = 6;
-  const CARD_HEIGHT_PERCENT = CARD_MAP_HEIGHT_PERCENT + CAPTION_HEIGHT_PERCENT;
+  const MIN_CARD_WIDTH_PERCENT = 14;
+  const MAX_CARD_WIDTH_PERCENT = 55;
 
   let mapInstance: MaplibreMap | undefined = $state();
   let center = $state<LngLatLike>([lng, lat]);
@@ -42,11 +40,15 @@
   let previewSnapshot = $state<string>();
 
   let photoEl: HTMLDivElement | undefined = $state();
+  let cardWidthPercent = $state(26);
+  const cardHeightPercent = $derived((cardWidthPercent * photoAspect) / WATERMARK_MAP_ASPECT + CAPTION_HEIGHT_PERCENT);
+
   let cardPos = $state({
-    xPercent: 100 - CARD_WIDTH_PERCENT - 4,
-    yPercent: 100 - CARD_HEIGHT_PERCENT - 4,
+    xPercent: 100 - 26 - 4,
+    yPercent: 100 - (26 * photoAspect) / WATERMARK_MAP_ASPECT - CAPTION_HEIGHT_PERCENT - 4,
   });
   let dragOrigin: { x: number; y: number; xPercent: number; yPercent: number } | undefined;
+  let resizeOrigin: { x: number; widthPercent: number } | undefined;
   let busy = $state(false);
 
   const styleUrl = serverConfigManager.value.mapLightStyleUrl;
@@ -71,13 +73,43 @@
     const dyPercent = ((event.clientY - dragOrigin.y) / rect.height) * 100;
 
     cardPos = {
-      xPercent: Math.min(Math.max(dragOrigin.xPercent + dxPercent, 0), 100 - CARD_WIDTH_PERCENT),
-      yPercent: Math.min(Math.max(dragOrigin.yPercent + dyPercent, 0), 100 - CARD_HEIGHT_PERCENT),
+      xPercent: Math.min(Math.max(dragOrigin.xPercent + dxPercent, 0), 100 - cardWidthPercent),
+      yPercent: Math.min(Math.max(dragOrigin.yPercent + dyPercent, 0), 100 - cardHeightPercent),
     };
   };
 
   const onCardPointerUp = () => {
     dragOrigin = undefined;
+  };
+
+  const onResizePointerDown = (event: PointerEvent) => {
+    resizeOrigin = { x: event.clientX, widthPercent: cardWidthPercent };
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onResizePointerMove = (event: PointerEvent) => {
+    if (!resizeOrigin || !photoEl) {
+      return;
+    }
+
+    const rect = photoEl.getBoundingClientRect();
+    const dxPercent = ((event.clientX - resizeOrigin.x) / rect.width) * 100;
+    cardWidthPercent = Math.min(
+      MAX_CARD_WIDTH_PERCENT,
+      Math.max(MIN_CARD_WIDTH_PERCENT, resizeOrigin.widthPercent + dxPercent),
+    );
+
+    // Keep the (possibly now bigger) card from spilling off the photo.
+    cardPos = {
+      xPercent: Math.min(cardPos.xPercent, 100 - cardWidthPercent),
+      yPercent: Math.min(cardPos.yPercent, 100 - cardHeightPercent),
+    };
+  };
+
+  const onResizePointerUp = () => {
+    resizeOrigin = undefined;
   };
 
   const onSubmit = async (event: SubmitEvent) => {
@@ -106,6 +138,7 @@
         mapCenter: { lat: mapCenter.lat, lng: mapCenter.lng },
         mapZoom,
         cardPosition: cardPos,
+        widthPercent: cardWidthPercent,
       });
       if (!blob) {
         throw new Error('Failed to render watermark');
@@ -160,29 +193,45 @@
         class="size-full object-cover"
       />
 
-      <button
-        type="button"
-        class="watermark-card absolute cursor-move touch-none border-none bg-transparent p-0 text-left"
+      <div
+        class="watermark-card absolute"
         style:left="{cardPos.xPercent}%"
         style:top="{cardPos.yPercent}%"
-        style:width="{CARD_WIDTH_PERCENT}%"
-        aria-label={$t('location_watermark_title')}
-        onpointerdown={onCardPointerDown}
-        onpointermove={onCardPointerMove}
-        onpointerup={onCardPointerUp}
-        onpointercancel={onCardPointerUp}
+        style:width="{cardWidthPercent}%"
       >
-        <div
-          class="watermark-crop"
-          style:aspect-ratio={WATERMARK_MAP_ASPECT}
-          style:background-image={previewSnapshot ? `url(${previewSnapshot})` : 'none'}
+        <button
+          type="button"
+          class="block w-full cursor-move touch-none border-none bg-transparent p-0 text-left"
+          aria-label={$t('location_watermark_title')}
+          onpointerdown={onCardPointerDown}
+          onpointermove={onCardPointerMove}
+          onpointerup={onCardPointerUp}
+          onpointercancel={onCardPointerUp}
         >
-          <span class="watermark-pin"></span>
-        </div>
-        {#if caption}
-          <p class="watermark-caption">{caption}</p>
-        {/if}
-      </button>
+          <div
+            class="watermark-crop"
+            style:aspect-ratio={WATERMARK_MAP_ASPECT}
+            style:background-image={previewSnapshot ? `url(${previewSnapshot})` : 'none'}
+          >
+            <span class="watermark-pin"></span>
+          </div>
+          {#if caption}
+            <p class="watermark-caption">{caption}</p>
+          {/if}
+        </button>
+
+        <button
+          type="button"
+          class="watermark-resize absolute flex cursor-nwse-resize touch-none items-center justify-center border-none bg-transparent p-0"
+          aria-label={$t('resize')}
+          onpointerdown={onResizePointerDown}
+          onpointermove={onResizePointerMove}
+          onpointerup={onResizePointerUp}
+          onpointercancel={onResizePointerUp}
+        >
+          <Icon icon={mdiResizeBottomRight} size="14" class="text-white drop-shadow" />
+        </button>
+      </div>
     </div>
   </div>
 </FormModal>
@@ -195,12 +244,12 @@
     background-size: cover;
     background-position: center;
     -webkit-mask-image:
-      linear-gradient(to right, transparent, white 16%, white 84%, transparent),
-      linear-gradient(to bottom, transparent, white 20%, white 80%, transparent);
+      linear-gradient(to right, transparent, white 5%, white 95%, transparent),
+      linear-gradient(to bottom, transparent, white 6%, white 94%, transparent);
     -webkit-mask-composite: source-in, source-over;
     mask-image:
-      linear-gradient(to right, transparent, white 16%, white 84%, transparent),
-      linear-gradient(to bottom, transparent, white 20%, white 80%, transparent);
+      linear-gradient(to right, transparent, white 5%, white 95%, transparent),
+      linear-gradient(to bottom, transparent, white 6%, white 94%, transparent);
     mask-composite: intersect;
   }
 
@@ -209,7 +258,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 14%;
+    width: 7%;
     aspect-ratio: 1;
     border-radius: 50%;
     background: #e11d48;
@@ -225,5 +274,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  }
+
+  .watermark-resize {
+    right: -8px;
+    bottom: -8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
   }
 </style>
