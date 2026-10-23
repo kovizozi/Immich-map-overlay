@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+  import { createPreloadedQuery } from '$lib/queries/client';
+  import { getPublicConfigQuery } from '$lib/queries/config-public.query';
   import { downloadBlob, getAssetMediaUrl } from '$lib/utils';
   import {
     createLocationWatermarkedBlob,
@@ -71,7 +72,8 @@
   let resizeOrigin: { x: number; widthPercent: number } | undefined;
   let busy = $state(false);
 
-  const styleUrl = serverConfigManager.value.mapLightStyleUrl;
+  const publicConfigQuery = createPreloadedQuery(getPublicConfigQuery);
+  const styleUrl = $derived(publicConfigQuery.data.map.lightStyle);
 
   const onMapIdle = () => {
     if (!mapInstance) {

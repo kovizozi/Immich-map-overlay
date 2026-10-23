@@ -1,13 +1,11 @@
 <script lang="ts" module>
-  import mapboxRtlUrl from '@mapbox/mapbox-gl-rtl-text?url';
-  import { addProtocol, setRTLTextPlugin } from 'maplibre-gl';
+  import { addProtocol } from 'maplibre-gl';
   import { Protocol } from 'pmtiles';
 
   // Mirrors shared-components/map/Map.svelte's module-level setup: this component renders its own
   // MapLibre instance instead of reusing that one, so it needs the same one-time protocol registration.
   let protocol = new Protocol();
   void addProtocol('pmtiles', protocol.tile);
-  void setRTLTextPlugin(mapboxRtlUrl, true);
 
   export interface TrackPoint {
     id: string;
@@ -55,7 +53,8 @@
 </script>
 
 <script lang="ts">
-  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+  import { createPreloadedQuery } from '$lib/queries/client';
+  import { getPublicConfigQuery } from '$lib/queries/config-public.query';
   import { locale, mapSettings } from '$lib/stores/preferences.store';
   import { navigate } from '$lib/utils/navigation';
   import { Icon, Theme, themeManager } from '@immich/ui';
@@ -103,9 +102,10 @@
     };
   });
 
+  const publicConfigQuery = createPreloadedQuery(getPublicConfigQuery);
   const mapTheme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.Light);
   const styleUrl = $derived(
-    mapTheme === Theme.Dark ? serverConfigManager.value.mapDarkStyleUrl : serverConfigManager.value.mapLightStyleUrl,
+    mapTheme === Theme.Dark ? publicConfigQuery.data.map.darkStyle : publicConfigQuery.data.map.lightStyle,
   );
 
   const anchorPoint = $derived(points.find((point) => point.id === activeAssetId) ?? points[0]);

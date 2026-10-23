@@ -68,5 +68,12 @@ export default defineConfig({
     env: {
       TZ: 'UTC',
     },
+    server: {
+      // maplibre-gl's own entry point imports its stylesheet as a side effect; left externalized,
+      // Vitest hands that straight to Node's loader, which chokes on the .css extension.
+      deps: {
+        inline: [/maplibre-gl/],
+      },
+    },
   },
 } as UserConfig);

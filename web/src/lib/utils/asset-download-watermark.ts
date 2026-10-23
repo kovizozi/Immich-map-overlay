@@ -1,9 +1,9 @@
 import { type AssetResponseDto } from '@immich/sdk';
-import mapboxRtlUrl from '@mapbox/mapbox-gl-rtl-text?url';
-import maplibregl, { addProtocol, setRTLTextPlugin } from 'maplibre-gl';
+import { addProtocol, type ErrorEvent, Map as MaplibreMap } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { get } from 'svelte/store';
-import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+import { readPreloadedQuery } from '$lib/queries/client';
+import { getPublicConfigQuery } from '$lib/queries/config-public.query';
 import { locale } from '$lib/stores/preferences.store';
 import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
 
@@ -11,7 +11,6 @@ import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
 // here since this module renders its own throwaway MapLibre instance outside of either component.
 const protocol = new Protocol();
 void addProtocol('pmtiles', protocol.tile);
-void setRTLTextPlugin(mapboxRtlUrl, true);
 
 // Starting point for the map crop's width/height ratio - adjustable per-download in the edit modal,
 // this is only the initial value shown when the modal opens.
@@ -64,9 +63,9 @@ const renderMapSnapshot = (
     container.style.height = `${height}px`;
     document.body.append(container);
 
-    const map = new maplibregl.Map({
+    const map = new MaplibreMap({
       container,
-      style: serverConfigManager.value.mapLightStyleUrl,
+      style: readPreloadedQuery(getPublicConfigQuery()).map.lightStyle,
       center: [center.lng, center.lat],
       zoom,
       interactive: false,
@@ -96,7 +95,7 @@ const renderMapSnapshot = (
       });
     });
 
-    map.once('error', (event) => {
+    map.once('error', (event: ErrorEvent) => {
       cleanup();
       reject(event.error ?? new Error('Failed to render map snapshot'));
     });
