@@ -67,8 +67,8 @@ import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import pg from 'pg';
 import { io, type Socket } from 'socket.io-client';
-import { loginDto, signupDto } from 'src/fixtures';
-import { makeRandomImage } from 'src/generators';
+import { loginDto, signupDto } from 'src/fixtures.js';
+import { makeRandomImage } from 'src/generators.js';
 import request from 'supertest';
 import { playwrightDbHost, playwrightHost, playwriteBaseUrl } from '../playwright.config';
 
@@ -184,6 +184,8 @@ export const utils = {
       'library',
       'shared_link',
       'person',
+      'person_group',
+      'cluster_group',
       'album',
       'asset',
       'asset_face',
@@ -434,12 +436,12 @@ export const utils = {
     return person;
   },
 
-  createFace: async ({ assetId, personId }: { assetId: string; personId: string }) => {
+  createFace: async ({ assetId, personGroupId }: { assetId: string; personGroupId: string }) => {
     if (!client) {
       return;
     }
 
-    await client.query('INSERT INTO asset_face ("assetId", "personId") VALUES ($1, $2)', [assetId, personId]);
+    await client.query('INSERT INTO asset_face ("assetId", "personGroupId") VALUES ($1, $2)', [assetId, personGroupId]);
   },
 
   setPersonThumbnail: async (personId: string) => {
@@ -447,7 +449,9 @@ export const utils = {
       return;
     }
 
-    await client.query(`UPDATE "person" set "thumbnailPath" = '/my/awesome/thumbnail.jpg' where "id" = $1`, [personId]);
+    await client.query(`UPDATE "person" set "thumbnailPath" = '/my/awesome/thumbnail.jpg' where "personGroupId" = $1`, [
+      personId,
+    ]);
   },
 
   createSharedLink: (accessToken: string, dto: SharedLinkCreateDto) =>
@@ -647,19 +651,19 @@ export const utils = {
 
   resetAdminConfig: async (accessToken: string) => {
     const defaultConfig = await getConfigDefaults({ headers: asBearerAuth(accessToken) });
-    await updateConfig({ systemConfigDto: defaultConfig }, { headers: asBearerAuth(accessToken) });
+    await updateConfig({ adminConfigDto: defaultConfig }, { headers: asBearerAuth(accessToken) });
   },
 
   isQueueEmpty: async (accessToken: string, queue: keyof QueuesResponseLegacyDto) => {
     const queues = await getQueuesLegacy({ headers: asBearerAuth(accessToken) });
     const jobCounts = queues[queue].jobCounts;
-    return !jobCounts.active && !jobCounts.waiting;
+    return !jobCounts.active && (!jobCounts.waiting || queues[queue].queueStatus.isPaused);
   },
 
   waitForQueueFinish: (accessToken: string, queue: keyof QueuesResponseLegacyDto, ms?: number) => {
     // eslint-disable-next-line no-async-promise-executor
     return new Promise<void>(async (resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timed out waiting for queue to empty')), ms || 10_000);
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for queue to empty')), ms || 15_000);
 
       while (true) {
         const done = await utils.isQueueEmpty(accessToken, queue);
@@ -675,9 +679,9 @@ export const utils = {
   },
 
   cliLogin: async (accessToken: string) => {
-    const key = await utils.createApiKey(accessToken, [Permission.All]);
-    await immichCli(['login', app, key.secret]);
-    return key.secret;
+    const { secret } = await utils.createApiKey(accessToken, [Permission.All]);
+    await immichCli(['login', app, secret]);
+    return secret;
   },
 
   scan: async (accessToken: string, id: string) => {

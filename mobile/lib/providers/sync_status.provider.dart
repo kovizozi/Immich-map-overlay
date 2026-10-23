@@ -1,25 +1,10 @@
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 part 'sync_status.provider.freezed.dart';
 
-enum SyncStatus {
-  idle,
-  syncing,
-  success,
-  error;
-
-  String localized() {
-    return switch (this) {
-      SyncStatus.idle => "idle".tr(),
-      SyncStatus.syncing => "running".tr(),
-      SyncStatus.success => "success".tr(),
-      SyncStatus.error => "error".tr(),
-    };
-  }
-}
+enum SyncStatus { idle, syncing, success, error }
 
 @freezed
 abstract class SyncStatusState with _$SyncStatusState {
@@ -36,6 +21,7 @@ abstract class SyncStatusState with _$SyncStatusState {
   bool get isRemoteSyncing => remoteSyncStatus == SyncStatus.syncing;
   bool get isLocalSyncing => localSyncStatus == SyncStatus.syncing;
   bool get isHashing => hashJobStatus == SyncStatus.syncing;
+  // ignore: unused-code
   bool get isCloudIdSyncing => cloudIdSyncStatus == SyncStatus.syncing;
 }
 

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:immich_mobile/constants/locales.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
-import 'package:immich_mobile/extensions/translate_extensions.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/services/localization.service.dart';
 import 'package:immich_mobile/widgets/common/search_field.dart';
 
@@ -97,7 +97,6 @@ class LanguageSettings extends HookWidget {
                       return _LanguageItem(
                         key: ValueKey(localeValue.toString()),
                         countryName: countryName,
-                        localeValue: localeValue,
                         isSelected: isSelected,
                         onTap: () {
                           selectedLocale.value = localeValue;
@@ -152,7 +151,7 @@ class _LanguageSearchBar extends StatelessWidget {
         child: SearchField(
           autofocus: false,
           contentPadding: const EdgeInsets.all(12),
-          hintText: 'language_search_hint'.t(context: context),
+          hintText: context.t.language_search_hint,
           prefixIcon: const Icon(Icons.search_rounded),
           suffixIcon: controller.text.isNotEmpty
               ? IconButton(icon: const Icon(Icons.clear_rounded), onPressed: onClear)
@@ -179,12 +178,12 @@ class _LanguageNotFound extends StatelessWidget {
           Icon(Icons.search_off_rounded, size: 64, color: context.colorScheme.onSurface.withValues(alpha: 0.4)),
           const SizedBox(height: 8),
           Text(
-            'language_no_results_title'.t(context: context),
+            context.t.language_no_results_title,
             style: context.textTheme.titleMedium?.copyWith(color: context.colorScheme.onSurface),
           ),
           const SizedBox(height: 4),
           Text(
-            'language_no_results_subtitle'.t(context: context),
+            context.t.language_no_results_subtitle,
             style: context.textTheme.bodyMedium?.copyWith(color: context.colorScheme.onSurface.withValues(alpha: 0.8)),
           ),
         ],
@@ -214,7 +213,7 @@ class _LanguageApplyButton extends StatelessWidget {
             child: isLoading
                 ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))
                 : Text(
-                    'setting_languages_apply'.t(context: context),
+                    context.t.setting_languages_apply,
                     style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16.0),
                   ),
           ),
@@ -225,16 +224,9 @@ class _LanguageApplyButton extends StatelessWidget {
 }
 
 class _LanguageItem extends StatelessWidget {
-  const _LanguageItem({
-    super.key,
-    required this.countryName,
-    required this.localeValue,
-    required this.isSelected,
-    required this.onTap,
-  });
+  const _LanguageItem({super.key, required this.countryName, required this.isSelected, required this.onTap});
 
   final String countryName;
-  final Locale localeValue;
   final bool isSelected;
   final VoidCallback onTap;
 

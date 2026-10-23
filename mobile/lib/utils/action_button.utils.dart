@@ -1,5 +1,4 @@
 import 'package:auto_route/auto_route.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
@@ -7,6 +6,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/events.model.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/domain/utils/event_stream.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/actions/action.widget.dart';
 import 'package:immich_mobile/presentation/actions/archive.action.dart';
 import 'package:immich_mobile/presentation/actions/asset_debug.action.dart';
@@ -33,7 +33,6 @@ class ActionButtonContext {
   final BaseAsset asset;
   final bool isOwner;
   final bool isArchived;
-  final bool isTrashEnabled;
   final bool isInLockedView;
   final bool isStacked;
   final RemoteAlbum? currentAlbum;
@@ -47,7 +46,6 @@ class ActionButtonContext {
     required this.asset,
     required this.isOwner,
     required this.isArchived,
-    required this.isTrashEnabled,
     required this.isStacked,
     required this.isInLockedView,
     required this.currentAlbum,
@@ -203,13 +201,13 @@ enum ActionButtonType {
       ),
       ActionButtonType.setProfilePicture => ActionMenuItem(action: SetProfilePictureAction(asset: context.asset)),
       ActionButtonType.openInfo => BaseActionButton(
-        label: 'info'.tr(),
+        label: StaticTranslations.instance.info,
         iconData: Icons.info_outline,
         menuItem: true,
         onPressed: () => EventStream.shared.emit(const ViewerShowDetailsEvent()),
       ),
       ActionButtonType.viewInTimeline => BaseActionButton(
-        label: 'view_in_timeline'.tr(),
+        label: StaticTranslations.instance.view_in_timeline,
         iconData: Icons.image_search,
         iconOnly: iconOnly,
         menuItem: menuItem,
@@ -259,10 +257,6 @@ class ActionButtonBuilder {
     ActionButtonType.unarchive,
     ActionButtonType.restoreTrash,
   };
-
-  static List<Widget> build(ActionButtonContext context) {
-    return _actionTypes.where((type) => type.shouldShow(context)).map((type) => type.buildButton(context)).toList();
-  }
 
   static List<Widget> buildViewerKebabMenu(ActionButtonContext context, BuildContext buildContext) {
     final visibleButtons = defaultViewerKebabMenuOrder
