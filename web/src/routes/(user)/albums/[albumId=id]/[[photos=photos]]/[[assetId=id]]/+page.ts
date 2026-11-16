@@ -1,12 +1,12 @@
-import { getAlbumInfoQuery } from '$lib/queries/album.query';
-import { queryClient } from '$lib/queries/client';
-import { authenticate } from '$lib/utils/auth';
+import { getAlbumInfoQuery } from '#lib/queries/album.query.ts';
+import { queryClient } from '#lib/queries/client.ts';
+import { authenticate } from '#lib/utils/auth.ts';
 import type { PageLoad } from './$types';
 
 export const load = (async ({ params, url }) => {
   await authenticate(url);
 
-  const album = await queryClient.query(getAlbumInfoQuery(params.albumId));
+  const album = await queryClient.query({ ...getAlbumInfoQuery(params.albumId), staleTime: 0 });
 
   return {
     meta: {

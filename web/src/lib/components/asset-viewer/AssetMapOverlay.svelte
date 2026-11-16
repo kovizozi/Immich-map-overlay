@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { timeToLoadTheMap } from '$lib/constants';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { assetMapOverlaySettings } from '$lib/stores/asset-map-overlay.store';
-  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
-  import { locale } from '$lib/stores/preferences.store';
-  import { delay } from '$lib/utils/asset-utils';
-  import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
-  import { type AlbumResponseDto, type AssetResponseDto, searchAssets } from '@immich/sdk';
+  import { timeToLoadTheMap } from '#lib/constants.ts';
+  import { authManager } from '#lib/managers/auth-manager.svelte.ts';
+  import { featureFlagsManager } from '#lib/managers/feature-flags-manager.svelte.ts';
+  import { assetMapOverlaySettings } from '#lib/stores/asset-map-overlay.store.ts';
+  import { mediaQueryManager } from '#lib/stores/media-query-manager.svelte.ts';
+  import { locale } from '#lib/stores/preferences.store.ts';
+  import { delay } from '#lib/utils/asset-utils.ts';
+  import { fromISODateTime, fromISODateTimeUTC } from '#lib/utils/timeline-util.ts';
+  import { searchAssets, type AlbumResponseDto, type AssetResponseDto } from '@immich/sdk';
   import { Icon, IconButton, LoadingSpinner } from '@immich/ui';
   import { mdiClose, mdiDragHorizontalVariant, mdiMapOutline, mdiResizeBottomRight } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
@@ -394,7 +394,7 @@
             />
           {/await}
         {:else if latlng}
-          {#await import('$lib/components/shared-components/map/Map.svelte')}
+          {#await import('#lib/components/shared-components/map/Map.svelte')}
             {#await delay(timeToLoadTheMap) then}
               <!-- show the loading spinner only if loading the map takes too much time -->
               <div class="flex size-full items-center justify-center">

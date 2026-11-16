@@ -1,11 +1,11 @@
+import { readPreloadedQuery } from '#lib/queries/client.ts';
+import { getPublicConfigQuery } from '#lib/queries/config-public.query.ts';
+import { locale } from '#lib/stores/preferences.store.ts';
+import { fromISODateTime, fromISODateTimeUTC } from '#lib/utils/timeline-util.ts';
 import { type AssetResponseDto } from '@immich/sdk';
-import { addProtocol, type ErrorEvent, Map as MaplibreMap } from 'maplibre-gl';
+import { Map as MaplibreMap, addProtocol, type ErrorEvent } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { get } from 'svelte/store';
-import { readPreloadedQuery } from '$lib/queries/client';
-import { getPublicConfigQuery } from '$lib/queries/config-public.query';
-import { locale } from '$lib/stores/preferences.store';
-import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
 
 // Mirrors the one-time protocol registration in Map.svelte / AssetMapOverlayTrack.svelte - needed again
 // here since this module renders its own throwaway MapLibre instance outside of either component.

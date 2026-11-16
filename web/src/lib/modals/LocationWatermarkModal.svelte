@@ -1,21 +1,21 @@
 <script lang="ts">
-  import { createPreloadedQuery } from '$lib/queries/client';
-  import { getPublicConfigQuery } from '$lib/queries/config-public.query';
-  import { downloadBlob, getAssetMediaUrl } from '$lib/utils';
+  import { createPreloadedQuery } from '#lib/queries/client.ts';
+  import { getPublicConfigQuery } from '#lib/queries/config-public.query.ts';
+  import { downloadBlob, getAssetMediaUrl } from '#lib/utils.ts';
   import {
-    createLocationWatermarkedBlob,
-    dateTimeLabel,
     DEFAULT_WATERMARK_MAP_ASPECT,
     DEFAULT_WATERMARK_ZOOM,
+    createLocationWatermarkedBlob,
+    dateTimeLabel,
     locationLabel,
-  } from '$lib/utils/asset-download-watermark';
-  import { handleError } from '$lib/utils/handle-error';
+  } from '#lib/utils/asset-download-watermark.ts';
+  import { handleError } from '#lib/utils/handle-error.ts';
   import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
   import { FormModal, Icon, Switch } from '@immich/ui';
   import { mdiMapMarker, mdiResizeBottomRight } from '@mdi/js';
   import type { LngLatLike, Map as MaplibreMap } from 'maplibre-gl';
-  import { MapLibre, Marker } from 'svelte-maplibre';
   import { t } from 'svelte-i18n';
+  import { MapLibre, Marker } from 'svelte-maplibre';
 
   interface Props {
     asset: AssetResponseDto;

@@ -1,6 +1,6 @@
 /**
  * Immich
- * 3.3.0-rc.0
+ * 3.4.0-rc.0
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -63,6 +63,8 @@ export type AdminConfigDatabaseBackupDto = {
     keepLastAmount: number;
 };
 export type AdminConfigBackupsDto = {
+    /** Whether the backups feature is enabled */
+    beta?: boolean;
     database: AdminConfigDatabaseBackupDto;
 };
 export type AdminConfigFFmpegRealtimeDto = {
@@ -478,6 +480,10 @@ export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** Restore backup filename */
     restoreBackupFilename?: string;
+    /** Rollback repository ID */
+    rollbackRepositoryId?: string;
+    /** Rollback snapshot ID */
+    rollbackSnapshotId?: string;
 };
 export type MaintenanceDetectInstallStorageFolderDto = {
     /** Number of files in the folder */
@@ -503,6 +509,8 @@ export type MaintenanceStatusResponseDto = {
     action: MaintenanceAction;
     active: boolean;
     error?: string;
+    /** FUTO Backups job ID */
+    futoBackupsJobId?: string;
     progress?: number;
     task?: string;
 };
@@ -576,7 +584,7 @@ export type UserAdminResponseDto = {
     id: string;
     /** Is admin user */
     isAdmin: boolean;
-    license: (UserLicense) | null;
+    license: UserLicense | null;
     /** User name */
     name: string;
     /** OAuth ID */
@@ -598,7 +606,7 @@ export type UserAdminResponseDto = {
     updatedAt: string;
 };
 export type UserAdminCreateDto = {
-    avatarColor?: (UserAvatarColor) | null;
+    avatarColor?: UserAvatarColor | null;
     /** User email */
     email: string;
     /** Grant admin privileges */
@@ -623,7 +631,7 @@ export type UserAdminDeleteDto = {
     force?: boolean;
 };
 export type UserAdminUpdateDto = {
-    avatarColor?: (UserAvatarColor) | null;
+    avatarColor?: UserAvatarColor | null;
     /** User email */
     email?: string;
     /** Grant admin privileges */
@@ -1343,7 +1351,7 @@ export type AssetResponseDto = {
     people?: PersonResponseDto[];
     /** Is resized */
     resized?: boolean;
-    stack?: (AssetStackResponseDto) | null;
+    stack?: AssetStackResponseDto | null;
     tags?: TagResponseDto[];
     /** Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting. */
     thumbhash: string | null;
@@ -1733,7 +1741,7 @@ export type AssetFaceResponseDto = {
     imageHeight: number;
     /** Image width in pixels */
     imageWidth: number;
-    person: (PersonResponseDto) | null;
+    person: PersonResponseDto | null;
     sourceType?: SourceType;
 };
 export type AssetFaceCreateDto = {
@@ -2885,6 +2893,8 @@ export type ServerConfigDto = {
     userDeleteDelay: number;
 };
 export type ServerFeaturesDto = {
+    /** Whether the backups feature is enabled */
+    backups: boolean;
     /** Whether config file is available */
     configFile: boolean;
     /** Whether duplicate detection is enabled */
@@ -3263,7 +3273,7 @@ export type TrashResponseDto = {
     count: number;
 };
 export type UserUpdateMeDto = {
-    avatarColor?: (UserAvatarColor) | null;
+    avatarColor?: UserAvatarColor | null;
     /** User email */
     email?: string;
     /** User name */
@@ -3396,7 +3406,7 @@ export type ReleaseEventV1 = {
     releaseVersion: ServerVersionResponseDto;
     serverVersion: ServerVersionResponseDto;
     /** Release type */
-    "type": ReleaseType;
+    "type": ReleaseType | null;
 };
 export type SyncAckV1 = {};
 export type SyncAlbumDeleteV1 = {
@@ -3724,7 +3734,7 @@ export type SyncAssetV2 = {
     width: number | null;
 };
 export type SyncAuthUserV1 = {
-    avatarColor?: (UserAvatarColor) | null;
+    avatarColor?: UserAvatarColor | null;
     /** User deleted at */
     deletedAt: string | null;
     /** User email */
@@ -3751,7 +3761,7 @@ export type SyncAuthUserV1 = {
     storageLabel: string | null;
 };
 export type SyncAuthUserV2 = {
-    avatarColor?: (UserAvatarColor) | null;
+    avatarColor?: UserAvatarColor | null;
     /** User deleted at */
     deletedAt: string | null;
     /** User email */
@@ -3924,7 +3934,7 @@ export type SyncUserMetadataV1 = {
     };
 };
 export type SyncUserV1 = {
-    avatarColor?: (UserAvatarColor) | null;
+    avatarColor?: UserAvatarColor | null;
     /** User deleted at */
     deletedAt: string | null;
     /** User email */
@@ -8214,6 +8224,7 @@ export enum Colorspace {
 }
 export enum ImageFormat {
     Jpeg = "jpeg",
+    Jxl = "jxl",
     Webp = "webp"
 }
 export enum LogLevel {
@@ -8241,7 +8252,8 @@ export enum MaintenanceAction {
     Start = "start",
     End = "end",
     SelectDatabaseRestore = "select_database_restore",
-    RestoreDatabase = "restore_database"
+    RestoreDatabase = "restore_database",
+    Rollback = "rollback"
 }
 export enum StorageFolder {
     EncodedVideo = "encoded-video",
@@ -8350,6 +8362,7 @@ export enum Permission {
     BackupDelete = "backup.delete",
     ClusterGroupRead = "clusterGroup.read",
     ClusterGroupLeave = "clusterGroup.leave",
+    ClusterGroupAdmin = "clusterGroup.admin",
     ClusterGroupRequestCreate = "clusterGroupRequest.create",
     ClusterGroupRequestRead = "clusterGroupRequest.read",
     ClusterGroupRequestDelete = "clusterGroupRequest.delete",
@@ -8601,6 +8614,7 @@ export enum WorkflowType {
 export enum WorkflowTrigger {
     AssetCreate = "AssetCreate",
     AssetMetadataExtraction = "AssetMetadataExtraction",
+    AssetOcrExtraction = "AssetOcrExtraction",
     AssetTagged = "AssetTagged"
 }
 export enum QueueJobStatus {
@@ -8822,7 +8836,8 @@ export enum ReleaseType {
     Prerelease = "prerelease"
 }
 export enum ServerFeatureLevel {
-    FeatureLevel = 1
+    FeatureLevel = 1,
+    Passkeys = 2
 }
 export enum UserMetadataKey {
     Preferences = "preferences",

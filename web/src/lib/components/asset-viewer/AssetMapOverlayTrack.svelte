@@ -53,10 +53,10 @@
 </script>
 
 <script lang="ts">
-  import { createPreloadedQuery } from '$lib/queries/client';
-  import { getPublicConfigQuery } from '$lib/queries/config-public.query';
-  import { locale, mapSettings } from '$lib/stores/preferences.store';
-  import { navigate } from '$lib/utils/navigation';
+  import { createPreloadedQuery } from '#lib/queries/client.ts';
+  import { getPublicConfigQuery } from '#lib/queries/config-public.query.ts';
+  import { locale, mapSettings } from '#lib/stores/preferences.store.ts';
+  import { navigate } from '#lib/utils/navigation.ts';
   import { Icon, Theme, themeManager } from '@immich/ui';
   import { mdiMapMarker } from '@mdi/js';
   import { DateTime } from 'luxon';

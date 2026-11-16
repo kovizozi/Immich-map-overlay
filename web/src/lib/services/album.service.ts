@@ -1,27 +1,9 @@
-import { AlbumUserRole, type AlbumResponseDto, type UserResponseDto } from '@immich/sdk';
-import { modalManager, type ActionItem } from '@immich/ui';
-import {
-  mdiDownload,
-  mdiImageOutline,
-  mdiLink,
-  mdiPlus,
-  mdiPlusBoxOutline,
-  mdiRenameOutline,
-  mdiShareVariantOutline,
-  mdiTrashCanOutline,
-  mdiExitToApp,
-  mdiUpload,
-  mdiCogOutline,
-} from '@mdi/js';
-import { type MessageFormatter } from 'svelte-i18n';
-import { goto } from '$app/navigation';
-import { page } from '$app/state';
-import { authManager } from '$lib/managers/auth-manager.svelte';
-import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-import AddUsersModal from '$lib/modals/AddUsersModal.svelte';
-import AlbumEditModal from '$lib/modals/AlbumEditModal.svelte';
-import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
-import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
+import { authManager } from '#lib/managers/auth-manager.svelte.ts';
+import type { TimelineAsset } from '#lib/managers/timeline-manager/types.ts';
+import AddUsersModal from '#lib/modals/AddUsersModal.svelte';
+import AlbumEditModal from '#lib/modals/AlbumEditModal.svelte';
+import AlbumOptionsModal from '#lib/modals/AlbumOptionsModal.svelte';
+import SharedLinkCreateModal from '#lib/modals/SharedLinkCreateModal.svelte';
 import {
   addAssetsToAlbumsMutation,
   addUsersToAlbumMutation,
@@ -29,13 +11,31 @@ import {
   removeUserFromAlbumMutation,
   updateAlbumInfoMutation,
   updateAlbumUserMutation,
-} from '$lib/queries/album.query';
-import { executeMutation } from '$lib/queries/client';
-import { Route } from '$lib/route';
-import { createAlbumAndRedirect } from '$lib/utils/album-utils';
-import { downloadArchive } from '$lib/utils/asset-utils';
-import { openFileUploadDialog } from '$lib/utils/file-uploader';
-import { getFormatter } from '$lib/utils/i18n';
+} from '#lib/queries/album.query.ts';
+import { executeMutation } from '#lib/queries/client.ts';
+import { Route } from '#lib/route.ts';
+import { createAlbumAndRedirect } from '#lib/utils/album-utils.ts';
+import { downloadArchive } from '#lib/utils/asset-utils.ts';
+import { openFileUploadDialog } from '#lib/utils/file-uploader.ts';
+import { getFormatter } from '#lib/utils/i18n.ts';
+import { AlbumUserRole, type AlbumResponseDto, type UserResponseDto } from '@immich/sdk';
+import { modalManager, type ActionItem } from '@immich/ui';
+import {
+  mdiCogOutline,
+  mdiDownload,
+  mdiExitToApp,
+  mdiImageOutline,
+  mdiLink,
+  mdiPlus,
+  mdiPlusBoxOutline,
+  mdiRenameOutline,
+  mdiShareVariantOutline,
+  mdiTrashCanOutline,
+  mdiUpload,
+} from '@mdi/js';
+import { type MessageFormatter } from 'svelte-i18n';
+import { goto } from '$app/navigation';
+import { page } from '$app/state';
 
 export const isAlbumOwner = (album: AlbumResponseDto) => album.albumUsers[0].user.id === authManager.user.id;
 export const isAlbumEditor = (album: AlbumResponseDto) =>
@@ -176,33 +176,20 @@ export const handleAddUsersToAlbum = (album: AlbumResponseDto, users: UserRespon
 export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUser: UserResponseDto) => {
   const $t = await getFormatter();
 
-  const confirmed = await modalManager.showDialog({
-    title: $t('album_remove_user'),
-    prompt: $t('album_remove_user_confirmation', { values: { user: albumUser.name } }),
-    confirmText: $t('remove_user'),
+  await executeMutation(removeUserFromAlbumMutation, [{ id: album.id, userId: albumUser.id }], {
+    confirm: {
+      title: $t('album_remove_user'),
+      prompt: $t('album_remove_user_confirmation', { values: { user: albumUser.name } }),
+      confirmText: $t('remove_user'),
+    },
   });
-
-  if (!confirmed) {
-    return;
-  }
-
-  await executeMutation(removeUserFromAlbumMutation, [{ id: album.id, userId: albumUser.id }]);
 };
 
 export const handleLeaveAlbum = async (album: AlbumResponseDto) => {
   const $t = await getFormatter();
 
-  const confirmed = await modalManager.showDialog({
-    title: $t('leave_album'),
-    prompt: $t('are_you_sure_to_do_this'),
-    confirmText: $t('leave'),
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
   await executeMutation(removeUserFromAlbumMutation, [{ id: album.id, userId: 'me' }], {
+    confirm: { title: $t('leave_album'), prompt: $t('are_you_sure_to_do_this'), confirmText: $t('leave') },
     onSuccess: () => leaveAlbumPage(album),
   });
 };
@@ -221,17 +208,11 @@ export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { pro
   const $t = await getFormatter();
   const { prompt = true, notify = true } = options ?? {};
 
-  if (prompt) {
-    const confirmation =
-      album.albumName.length > 0
-        ? $t('album_delete_confirmation', { values: { album: album.albumName } })
-        : $t('unnamed_album_delete_confirmation');
-    const description = $t('album_delete_confirmation_description');
-    const success = await modalManager.showDialog({ prompt: `${confirmation} ${description}` });
-    if (!success) {
-      return;
-    }
-  }
+  const confirmation =
+    album.albumName.length > 0
+      ? $t('album_delete_confirmation', { values: { album: album.albumName } })
+      : $t('unnamed_album_delete_confirmation');
+  const description = $t('album_delete_confirmation_description');
 
   await executeMutation(
     () =>
@@ -239,7 +220,10 @@ export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { pro
         notify ? { success: { toast: true }, error: { toast: 'errors.unable_to_delete_album' } } : {},
       ),
     [{ id: album.id }],
-    { onSuccess: () => leaveAlbumPage(album) },
+    {
+      confirm: prompt && { prompt: `${confirmation} ${description}` },
+      onSuccess: () => leaveAlbumPage(album),
+    },
   );
 };
 
